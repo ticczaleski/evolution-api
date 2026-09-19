@@ -62,4 +62,34 @@ export class ChatwootDeliveryService {
       logger.error(error);
     }
   }
+
+  /**
+   * Registers the raw WhatsApp message key on the original Chatwoot message's source_id via
+   * the authenticated Application API, once WhatsApp has accepted the send. This is the only
+   * supported way to set source_id on an outbound message — never write it directly to
+   * Chatwoot's database. Required for quoted replies to outgoing messages to resolve, since
+   * Chatwoot's InReplyToMessageBuilder matches parents by source_id.
+   */
+  public async registerExternalId(
+    client: ChatwootClient,
+    accountId: number,
+    conversationId: number,
+    chatwootMessageId: number,
+    externalId: string,
+  ): Promise<void> {
+    if (!client || !accountId || !conversationId || !chatwootMessageId || !externalId) {
+      return;
+    }
+
+    try {
+      await client.messages.update({
+        accountId,
+        conversationId,
+        messageId: chatwootMessageId,
+        data: { source_id: externalId } as any,
+      });
+    } catch (error) {
+      logger.error(error);
+    }
+  }
 }

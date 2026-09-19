@@ -1501,6 +1501,17 @@ export class ChatwootService {
                 },
                 instance,
               );
+
+              const sentKey = messageSent?.key as WAMessageKey;
+              if (sentKey?.id && body.conversation?.id) {
+                await this.delivery.registerExternalId(
+                  client,
+                  this.provider.accountId,
+                  body.conversation.id,
+                  body.id,
+                  `WAID:${sentKey.id}`,
+                );
+              }
             }
           } else {
             const data: SendTextDto = {
@@ -1535,6 +1546,17 @@ export class ChatwootService {
                 },
                 instance,
               );
+
+              const sentKey = messageSent?.key as WAMessageKey;
+              if (sentKey?.id && body.conversation?.id) {
+                await this.delivery.registerExternalId(
+                  client,
+                  this.provider.accountId,
+                  body.conversation.id,
+                  body.id,
+                  `WAID:${sentKey.id}`,
+                );
+              }
             } catch (error) {
               if (!messageSent && body.conversation?.id) {
                 this.onSendMessageError(instance, body.conversation?.id, body.id, error);
@@ -1680,6 +1702,22 @@ export class ChatwootService {
   }
 
   private async getQuotedMessage(msg: any, instance: InstanceDto): Promise<Quoted> {
+    // Prefer the WhatsApp-native external id Chatwoot carries on the reply: it identifies the
+    // parent directly, regardless of which side (agent or contact) originally sent it. Fall
+    // back to Evolution's own chatwootMessageId mapping only when it is absent, since that
+    // mapping only ever covers messages Evolution itself sent.
+    const inReplyToExternalId: string | undefined = msg?.content_attributes?.in_reply_to_external_id;
+    if (inReplyToExternalId) {
+      const rawKeyId = inReplyToExternalId.startsWith('WAID:') ? inReplyToExternalId.slice(5) : inReplyToExternalId;
+      const message = await this.getMessageByKeyId(instance, rawKeyId);
+      const key = message?.key as WAMessageKey;
+      const messageContent = message?.message as WAMessageContent;
+
+      if (messageContent && key?.id) {
+        return { key, message: messageContent };
+      }
+    }
+
     if (msg?.content_attributes?.in_reply_to) {
       const message = await this.prismaRepository.message.findFirst({
         where: {
