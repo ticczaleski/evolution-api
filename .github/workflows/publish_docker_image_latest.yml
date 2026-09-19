@@ -4,6 +4,19 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      custom_tag:
+        description: 'Custom tag for the Docker image (e.g. 2.3.7-reactions)'
+        required: false
+        type: string
+
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ticczaleski/evolution-api
 
 jobs:
   build_deploy:
@@ -11,19 +24,31 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           submodules: recursive
 
+      - name: Extract app version
+        id: app_version
+        run: |
+          VERSION=$(jq -r '.version // "0.0.0"' package.json)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: evoapicloud/evolution-api
-          tags: latest
+          images: ${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ steps.app_version.outputs.version }},enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=${{ inputs.custom_tag }},enable=${{ github.event_name == 'workflow_dispatch' && inputs.custom_tag != '' }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -45,6 +70,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
