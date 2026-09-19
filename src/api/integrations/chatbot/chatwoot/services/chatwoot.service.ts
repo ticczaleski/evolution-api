@@ -42,6 +42,15 @@ interface ChatwootMessage {
   isRead?: boolean;
 }
 
+// Chatwoot dispatches these for a reaction created/replaced/removed on an existing message —
+// never a chat message in its own right. Chatwoot only sends them to inboxes that declared
+// the 'reactions' provider capability, so no capability check is needed on this side.
+const REACTION_WEBHOOK_EVENTS = new Set([
+  'message_reaction_created',
+  'message_reaction_updated',
+  'message_reaction_deleted',
+]);
+
 export class ChatwootService {
   private readonly logger = new Logger('ChatwootService');
 
@@ -1309,6 +1318,10 @@ export class ChatwootService {
         return null;
       }
 
+      if (REACTION_WEBHOOK_EVENTS.has(body.event)) {
+        return this.handleReactionWebhook(instance, body);
+      }
+
       if (
         this.provider.reopenConversation === false &&
         body.event === 'conversation_status_changed' &&
@@ -1631,6 +1644,60 @@ export class ChatwootService {
     }
   }
 
+  // A reaction created/replaced by an agent in Chatwoot (actor_type: 'User') is relayed to
+  // WhatsApp via Baileys' native reaction message. A contact-originated reaction
+  // (actor_type: 'Contact') already came FROM WhatsApp — relaying it back would be a pointless
+  // echo, so it is acknowledged without any outbound send.
+  private async handleReactionWebhook(instance: InstanceDto, body: any) {
+    try {
+      if (body.actor_type !== 'User') {
+        return { message: 'bot' };
+      }
+
+      const canProcess = await this.delivery.claim(instance.instanceName, body.id, `react:${body.event}`);
+      if (!canProcess) {
+        return { message: 'bot' };
+      }
+
+      const waInstance = this.waMonitor.waInstances[instance.instanceName];
+      if (!waInstance) {
+        this.logger.warn(`Reaction webhook for chatwoot message ${body.message_id}: instance not found`);
+        return { message: 'bot' };
+      }
+
+      const rawSourceId: string | undefined = body.source_id;
+      if (!rawSourceId) {
+        // The target message has not been registered with a WhatsApp key yet (e.g. it hasn't
+        // finished sending) — acknowledge without retrying; there is nothing to react to yet.
+        this.logger.warn(`Reaction webhook for chatwoot message ${body.message_id} has no source_id; skipping`);
+        return { message: 'bot' };
+      }
+
+      const rawKeyId = rawSourceId.startsWith('WAID:') ? rawSourceId.slice(5) : rawSourceId;
+      const targetMessage = await this.getMessageByKeyId(instance, rawKeyId);
+      const targetKey = targetMessage?.key as WAMessageKey;
+
+      if (!targetKey?.id) {
+        // Unknown parent: log and acknowledge rather than retry-storming a message this
+        // instance never saw (e.g. it predates this instance's history).
+        this.logger.warn(
+          `Could not resolve WhatsApp key for chatwoot message ${body.message_id}; acknowledging without retry`,
+        );
+        return { message: 'bot' };
+      }
+
+      const reaction = body.event === 'message_reaction_deleted' ? '' : body.emoji || '';
+
+      await waInstance.reactionMessage({ key: targetKey, reaction });
+
+      return { message: 'bot' };
+    } catch (error) {
+      this.logger.error(error);
+
+      return { message: 'bot' };
+    }
+  }
+
   private async updateChatwootMessageId(
     message: MessageModel,
     chatwootMessageIds: ChatwootMessage,
@@ -1796,6 +1863,39 @@ export class ChatwootService {
     const reactionMessage: ReactionMessage | undefined = msg?.reactionMessage;
 
     return reactionMessage;
+  }
+
+  // A WhatsApp contact's own reaction, relayed to Chatwoot as reaction state on the existing
+  // message it targets — never as a new chat message. message_type: 'incoming' tells Chatwoot
+  // to attribute it to the conversation's contact, mirroring how MessageBuilder already
+  // attributes contact-originated messages regardless of which token authenticates the call.
+  private async handleInboundContactReaction(
+    instance: InstanceDto,
+    reactionMessage: { key: { id: string; fromMe: boolean; remoteJid: string; participant?: string }; text: string },
+  ) {
+    const targetMessage = await this.getMessageByKeyId(instance, reactionMessage.key.id);
+
+    if (!targetMessage?.chatwootMessageId || !targetMessage?.chatwootConversationId) {
+      // Unknown parent (e.g. it predates this instance's history): log and acknowledge rather
+      // than retry-storming a message Chatwoot has never seen.
+      this.logger.warn(
+        `Received a WhatsApp reaction for an unknown message (key: ${reactionMessage.key.id}); acknowledging without retry`,
+      );
+      return;
+    }
+
+    try {
+      await chatwootRequest(this.getClientCwConfig(), {
+        method: 'PUT',
+        url: `/api/v1/accounts/${this.provider.accountId}/conversations/${targetMessage.chatwootConversationId}/messages/${targetMessage.chatwootMessageId}/reaction`,
+        body: {
+          emoji: reactionMessage.text || '',
+          message_type: 'incoming',
+        },
+      });
+    } catch (error) {
+      this.logger.error(error);
+    }
   }
 
   private getTypeMessage(msg: any) {
@@ -2184,26 +2284,7 @@ export class ChatwootService {
         }
 
         if (reactionMessage) {
-          if (reactionMessage.text) {
-            const send = await this.createMessage(
-              instance,
-              getConversation,
-              reactionMessage.text,
-              messageType,
-              false,
-              [],
-              {
-                message: { extendedTextMessage: { contextInfo: { stanzaId: reactionMessage.key.id } } },
-              },
-              'WAID:' + body.key.id,
-              quotedMsg,
-            );
-            if (!send) {
-              this.logger.warn('message not sent');
-              return;
-            }
-          }
-
+          await this.handleInboundContactReaction(instance, reactionMessage);
           return;
         }
 
