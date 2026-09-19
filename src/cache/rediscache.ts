@@ -48,6 +48,20 @@ export class RedisCache implements ICache {
     }
   }
 
+  async setNX(key: string, value: any, ttl?: number): Promise<boolean> {
+    try {
+      const result = await this.client.set(this.buildKey(key), JSON.stringify(value), {
+        NX: true,
+        EX: ttl || this.conf?.TTL,
+      });
+
+      return result === 'OK';
+    } catch (error) {
+      this.logger.error(error);
+      return false;
+    }
+  }
+
   async hSet(key: string, field: string, value: any) {
     try {
       const json = JSON.stringify(value, BufferJSON.replacer);

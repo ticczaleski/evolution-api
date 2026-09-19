@@ -28,6 +28,19 @@ export class LocalCache implements ICache {
     return LocalCache.localCache.has(this.buildKey(key));
   }
 
+  // No `await` occurs between the has()/set() check-and-act below, so within this single
+  // JS event-loop turn no other call can interleave and race it — this is atomic in-process.
+  async setNX(key: string, value: any, ttl?: number): Promise<boolean> {
+    const builtKey = this.buildKey(key);
+
+    if (LocalCache.localCache.has(builtKey)) {
+      return false;
+    }
+
+    LocalCache.localCache.set(builtKey, value, ttl || this.conf.TTL);
+    return true;
+  }
+
   async delete(key: string) {
     return LocalCache.localCache.del(this.buildKey(key));
   }

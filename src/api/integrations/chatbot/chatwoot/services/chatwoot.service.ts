@@ -2,6 +2,7 @@ import { InstanceDto } from '@api/dto/instance.dto';
 import { Options, Quoted, SendAudioDto, SendMediaDto, SendTextDto } from '@api/dto/sendMessage.dto';
 import { ChatwootDto } from '@api/integrations/chatbot/chatwoot/dto/chatwoot.dto';
 import { postgresClient } from '@api/integrations/chatbot/chatwoot/libs/postgres.client';
+import { ChatwootDeliveryService } from '@api/integrations/chatbot/chatwoot/services/chatwoot-delivery.service';
 import { chatwootImport } from '@api/integrations/chatbot/chatwoot/utils/chatwoot-import-helper';
 import { PrismaRepository } from '@api/repository/repository.service';
 import { CacheService } from '@api/services/cache.service';
@@ -57,6 +58,16 @@ export class ChatwootService {
   ) {}
 
   private pgClient = postgresClient.getChatwootConnection();
+
+  private chatwootDeliveryService: ChatwootDeliveryService;
+
+  private get delivery(): ChatwootDeliveryService {
+    if (!this.chatwootDeliveryService) {
+      this.chatwootDeliveryService = new ChatwootDeliveryService(this.cache);
+    }
+
+    return this.chatwootDeliveryService;
+  }
 
   private async getProvider(instance: InstanceDto): Promise<ChatwootModel | null> {
     const cacheKey = `${instance.instanceName}:getProvider`;
@@ -1268,46 +1279,29 @@ export class ChatwootService {
     }
   }
 
-  public async onSendMessageError(instance: InstanceDto, conversation: number, error?: any) {
+  public async onSendMessageError(instance: InstanceDto, conversation: number, messageId?: number, error?: any) {
     this.logger.verbose(`onSendMessageError ${JSON.stringify(error)}`);
 
     const client = await this.clientCw(instance);
 
-    if (!client) {
+    if (!client || !messageId) {
       return;
     }
 
-    if (error && error?.status === 400 && error?.message[0]?.exists === false) {
-      client.messages.create({
-        accountId: this.provider.accountId,
-        conversationId: conversation,
-        data: {
-          content: `${i18next.t('cw.message.numbernotinwhatsapp')}`,
-          message_type: 'outgoing',
-          private: true,
-        },
-      });
+    const externalError =
+      error && error?.status === 400 && error?.message[0]?.exists === false
+        ? i18next.t('cw.message.numbernotinwhatsapp')
+        : i18next.t('cw.message.notsent', {
+            error: error ? `_${error.toString()}_` : '',
+          });
 
-      return;
-    }
-
-    client.messages.create({
-      accountId: this.provider.accountId,
-      conversationId: conversation,
-      data: {
-        content: i18next.t('cw.message.notsent', {
-          error: error ? `_${error.toString()}_` : '',
-        }),
-        message_type: 'outgoing',
-        private: true,
-      },
-    });
+    // Mark the original message as failed via the Application API instead of creating a
+    // private note: keeps it retryable and avoids a second, unrelated message in the thread.
+    await this.delivery.reportFailure(client, this.provider.accountId, conversation, messageId, externalError);
   }
 
   public async receiveWebhook(instance: InstanceDto, body: any) {
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
       const client = await this.clientCw(instance);
 
       if (!client) {
@@ -1446,8 +1440,17 @@ export class ChatwootService {
           return { message: 'bot' };
         }
 
+        // Chatwoot may redeliver the same message_created webhook (retries, worker restarts).
+        // Claim this (instance, message, operation) once so a duplicate delivery is
+        // acknowledged without sending to WhatsApp a second time.
+        const canProcessDelivery = await this.delivery.claim(instance.instanceName, body.id, 'send');
+        if (!canProcessDelivery) {
+          this.logger.verbose(`Skipping duplicate outbound delivery for chatwoot message ${body.id}`);
+          return { message: 'bot' };
+        }
+
         if (!waInstance && body.conversation?.id) {
-          this.onSendMessageError(instance, body.conversation?.id, 'Instance not found');
+          this.onSendMessageError(instance, body.conversation?.id, body.id, 'Instance not found');
           return { message: 'bot' };
         }
 
@@ -1483,7 +1486,7 @@ export class ChatwootService {
                 options,
               );
               if (!messageSent && body.conversation?.id) {
-                this.onSendMessageError(instance, body.conversation?.id);
+                this.onSendMessageError(instance, body.conversation?.id, body.id);
               }
 
               await this.updateChatwootMessageId(
@@ -1498,6 +1501,17 @@ export class ChatwootService {
                 },
                 instance,
               );
+
+              const sentKey = messageSent?.key as WAMessageKey;
+              if (sentKey?.id && body.conversation?.id) {
+                await this.delivery.registerExternalId(
+                  client,
+                  this.provider.accountId,
+                  body.conversation.id,
+                  body.id,
+                  `WAID:${sentKey.id}`,
+                );
+              }
             }
           } else {
             const data: SendTextDto = {
@@ -1532,9 +1546,20 @@ export class ChatwootService {
                 },
                 instance,
               );
+
+              const sentKey = messageSent?.key as WAMessageKey;
+              if (sentKey?.id && body.conversation?.id) {
+                await this.delivery.registerExternalId(
+                  client,
+                  this.provider.accountId,
+                  body.conversation.id,
+                  body.id,
+                  `WAID:${sentKey.id}`,
+                );
+              }
             } catch (error) {
               if (!messageSent && body.conversation?.id) {
-                this.onSendMessageError(instance, body.conversation?.id, error);
+                this.onSendMessageError(instance, body.conversation?.id, body.id, error);
               }
               throw error;
             }
@@ -1677,6 +1702,22 @@ export class ChatwootService {
   }
 
   private async getQuotedMessage(msg: any, instance: InstanceDto): Promise<Quoted> {
+    // Prefer the WhatsApp-native external id Chatwoot carries on the reply: it identifies the
+    // parent directly, regardless of which side (agent or contact) originally sent it. Fall
+    // back to Evolution's own chatwootMessageId mapping only when it is absent, since that
+    // mapping only ever covers messages Evolution itself sent.
+    const inReplyToExternalId: string | undefined = msg?.content_attributes?.in_reply_to_external_id;
+    if (inReplyToExternalId) {
+      const rawKeyId = inReplyToExternalId.startsWith('WAID:') ? inReplyToExternalId.slice(5) : inReplyToExternalId;
+      const message = await this.getMessageByKeyId(instance, rawKeyId);
+      const key = message?.key as WAMessageKey;
+      const messageContent = message?.message as WAMessageContent;
+
+      if (messageContent && key?.id) {
+        return { key, message: messageContent };
+      }
+    }
+
     if (msg?.content_attributes?.in_reply_to) {
       const message = await this.prismaRepository.message.findFirst({
         where: {
