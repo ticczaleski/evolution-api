@@ -5,6 +5,12 @@ export interface ICache {
 
   set(key: string, value: any, ttl?: number): void;
 
+  /**
+   * Atomically sets `key` only if it does not already exist.
+   * Returns true when this call claimed the key, false when another caller already holds it.
+   */
+  setNX(key: string, value: any, ttl?: number): Promise<boolean>;
+
   hSet(key: string, field: string, value: any): Promise<void>;
 
   has(key: string): Promise<boolean>;

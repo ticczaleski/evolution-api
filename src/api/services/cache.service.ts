@@ -58,6 +58,15 @@ export class CacheService {
     }
   }
 
+  // When caching is disabled there is no way to deduplicate, so we fail open (claim
+  // succeeds) rather than silently blocking every call that depends on this claim.
+  async setNX(key: string, value: any, ttl?: number): Promise<boolean> {
+    if (!this.cache) {
+      return true;
+    }
+    return this.cache.setNX(key, value, ttl);
+  }
+
   async has(key: string) {
     if (!this.cache) {
       return;
