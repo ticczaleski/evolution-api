@@ -115,6 +115,26 @@ describe('ChatwootService reaction bridge', () => {
 
       expect(reactionMessage).not.toHaveBeenCalled();
     });
+
+    // The HTTP webhook route builds `instance` from the URL's :instanceName param alone
+    // (see ChatwootRouter -> RouterBroker#dataValidate), so instanceId is missing until this
+    // handler fills it in. Regression for the bug where getMessageByKeyId's `instanceId`
+    // predicate silently matched nothing because that fill-in step was skipped.
+    it('resolves instanceId from the running instance before looking up the target message', async () => {
+      const { service, waMonitor } = buildService();
+      const routeInstance = { instanceName: 'my-instance' } as any;
+      const reactionMessage = vi.fn().mockResolvedValue({});
+      waMonitor.waInstances[routeInstance.instanceName] = { reactionMessage, instanceId: 'resolved-instance-id' };
+      const getMessageByKeyId = vi.spyOn(service as any, 'getMessageByKeyId').mockResolvedValue({ key: targetKey });
+
+      await (service as any).handleReactionWebhook(routeInstance, buildReactionBody());
+
+      expect(routeInstance.instanceId).toBe('resolved-instance-id');
+      expect(getMessageByKeyId).toHaveBeenCalledWith(
+        expect.objectContaining({ instanceId: 'resolved-instance-id' }),
+        targetKey.id,
+      );
+    });
   });
 
   describe('inbound: WhatsApp contact reaction -> Chatwoot', () => {
