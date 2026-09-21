@@ -187,4 +187,50 @@ describe('ChatwootService reaction bridge', () => {
       expect(createMessage).not.toHaveBeenCalled();
     });
   });
+
+  describe('eventWhatsapp: reaction echo from a self-sent reaction (messages.upsert)', () => {
+    // WhatsApp echoes back a reaction this instance itself just sent as an ordinary
+    // messages.upsert event (fromMe: true) — same shape as a contact's own reaction. Relaying
+    // that echo would double-count: once when the agent's reaction was created via the
+    // dashboard, and again here as a phantom Contact-actor reaction on the same message.
+    const buildUpsertBody = (fromMe: boolean) => ({
+      key: { id: 'WA-KEY-3', remoteJid: '123@s.whatsapp.net', fromMe },
+      message: {
+        reactionMessage: { key: { id: 'WA-KEY-1', fromMe: false, remoteJid: '123@s.whatsapp.net' }, text: '👍' },
+      },
+    });
+
+    const mockCommonDeps = (service: any) => {
+      vi.spyOn(service, 'clientCw').mockResolvedValue({});
+      vi.spyOn(service, 'createConversation').mockResolvedValue({ id: 1 });
+      vi.spyOn(service, 'getConversationMessage').mockReturnValue(undefined);
+      vi.spyOn(service as any, 'isMediaMessage').mockReturnValue(false);
+      vi.spyOn(service as any, 'getAdsMessage').mockReturnValue(undefined);
+      vi.spyOn(service as any, 'isInteractiveButtonMessage').mockReturnValue(false);
+    };
+
+    it('does not relay the echo of the instance own reaction to Chatwoot', async () => {
+      const { service, waMonitor } = buildService();
+      waMonitor.waInstances[instance.instanceName] = {};
+      mockCommonDeps(service);
+      const handleInboundContactReaction = vi.spyOn(service as any, 'handleInboundContactReaction');
+
+      await service.eventWhatsapp('messages.upsert', instance, buildUpsertBody(true));
+
+      expect(handleInboundContactReaction).not.toHaveBeenCalled();
+    });
+
+    it('still relays a genuine contact reaction (fromMe: false)', async () => {
+      const { service, waMonitor } = buildService();
+      waMonitor.waInstances[instance.instanceName] = {};
+      mockCommonDeps(service);
+      const handleInboundContactReaction = vi
+        .spyOn(service as any, 'handleInboundContactReaction')
+        .mockResolvedValue(undefined);
+
+      await service.eventWhatsapp('messages.upsert', instance, buildUpsertBody(false));
+
+      expect(handleInboundContactReaction).toHaveBeenCalledTimes(1);
+    });
+  });
 });
