@@ -2289,7 +2289,13 @@ export class ChatwootService {
         }
 
         if (reactionMessage) {
-          await this.handleInboundContactReaction(instance, reactionMessage);
+          // WhatsApp echoes back a reaction this instance itself just sent (fromMe: true) as an
+          // ordinary messages.upsert event, indistinguishable in shape from one a contact sent.
+          // Relaying that echo to Chatwoot would double-count the agent's own reaction: once
+          // when it was created via the dashboard, and again here as a phantom Contact reaction.
+          if (!body.key.fromMe) {
+            await this.handleInboundContactReaction(instance, reactionMessage);
+          }
           return;
         }
 
