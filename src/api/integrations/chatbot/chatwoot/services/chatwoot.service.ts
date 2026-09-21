@@ -1664,6 +1664,11 @@ export class ChatwootService {
         this.logger.warn(`Reaction webhook for chatwoot message ${body.message_id}: instance not found`);
         return { message: 'bot' };
       }
+      // The webhook route only resolves `instanceName` from the URL param — `instanceId` must
+      // be filled in from the running instance before any lookup keyed on it (mirrors the
+      // message_created path at the top of receiveWebhook), or getMessageByKeyId's `instanceId`
+      // predicate silently matches nothing.
+      instance.instanceId = waInstance.instanceId;
 
       const rawSourceId: string | undefined = body.source_id;
       if (!rawSourceId) {
