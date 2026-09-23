@@ -1559,6 +1559,9 @@ export class BaileysStartupService extends ChannelStartupService {
       this.logger.verbose(`Update messages ${JSON.stringify(args, undefined, 2)}`);
 
       const readChatToUpdate: Record<string, true> = {}; // {remoteJid: true}
+      // Received messages read on another device of this account (phone / WhatsApp Web),
+      // relayed to Chatwoot once for the whole batch after the loop.
+      const readSelfKeys: WAMessageKey[] = [];
 
       for await (const { key, update } of args) {
         if (settings?.groupsIgnore && key.remoteJid?.includes('@g.us')) {
@@ -1594,6 +1597,12 @@ export class BaileysStartupService extends ChannelStartupService {
               { key: key },
             );
           }
+        }
+
+        // Baileys maps a `read-self` receipt (another device of ours read a received message)
+        // to a READ status on a key with fromMe=false.
+        if (status[update.status] === 'READ' && !key.fromMe && key.id) {
+          readSelfKeys.push(key);
         }
 
         if (key.remoteJid !== 'status@broadcast' && key.id !== undefined) {
@@ -1727,6 +1736,14 @@ export class BaileysStartupService extends ChannelStartupService {
       }
 
       await Promise.all(Object.keys(readChatToUpdate).map((remoteJid) => this.updateChatUnreadMessages(remoteJid)));
+
+      if (readSelfKeys.length && this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
+        this.chatwootService.eventWhatsapp(
+          'messages.read-self',
+          { instanceName: this.instance.name, instanceId: this.instanceId },
+          { keys: readSelfKeys },
+        );
+      }
     },
   };
 
