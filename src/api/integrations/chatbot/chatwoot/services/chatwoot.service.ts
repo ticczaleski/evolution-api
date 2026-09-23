@@ -1737,6 +1737,39 @@ export class ChatwootService {
     });
   }
 
+  // The contact's device acknowledged messages we sent (delivered / read). Chatwoot API inboxes
+  // show each message's own status as its ticks, so set it per message. Chatwoot only moves a
+  // status forward, so a late `delivered` can never downgrade a message already `read`.
+  private async updateOutboundMessageStatuses(
+    instance: InstanceDto,
+    updates: { key: WAMessageKey; status: 'delivered' | 'read' }[],
+  ) {
+    const rank = { delivered: 1, read: 2 };
+    const latestByKeyId = new Map<string, 'delivered' | 'read'>();
+
+    for (const { key, status } of updates) {
+      if (!key?.id || !rank[status]) continue;
+
+      const current = latestByKeyId.get(key.id);
+      if (!current || rank[status] > rank[current]) latestByKeyId.set(key.id, status);
+    }
+
+    for (const [keyId, status] of latestByKeyId) {
+      const message = await this.getMessageByKeyId(instance, keyId);
+      if (!message?.chatwootConversationId || !message?.chatwootMessageId) continue;
+
+      try {
+        await chatwootRequest(this.getClientCwConfig(), {
+          method: 'PATCH',
+          url: `/api/v1/accounts/${this.provider.accountId}/conversations/${message.chatwootConversationId}/messages/${message.chatwootMessageId}`,
+          body: { status },
+        });
+      } catch (error) {
+        this.logger.error(`Error updating Chatwoot message ${message.chatwootMessageId} status to ${status}: ${error}`);
+      }
+    }
+  }
+
   // Received messages were read on another device of this account (phone / WhatsApp Web).
   // Chatwoot counts as unread every message created after the conversation's
   // agent_last_seen_at, so advance it once per affected conversation.
@@ -2566,6 +2599,10 @@ export class ChatwootService {
 
       if (event === 'messages.read-self') {
         return this.markConversationsSeenFromWhatsapp(instance, body?.keys || []);
+      }
+
+      if (event === 'messages.status') {
+        return this.updateOutboundMessageStatuses(instance, body?.updates || []);
       }
 
       if (event === 'messages.read') {

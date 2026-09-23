@@ -78,6 +78,66 @@ describe('ChatwootService read sync', () => {
     });
   });
 
+  describe('contact receipts for our messages -> Chatwoot message status (ticks)', () => {
+    const key = (id: string) => ({ id, remoteJid: '5555@s.whatsapp.net', fromMe: true });
+    const bridged: Record<string, any> = {
+      A: { chatwootConversationId: 7, chatwootMessageId: 101 },
+      B: { chatwootConversationId: 7, chatwootMessageId: 102 },
+    };
+
+    it('PATCHes each bridged message with its delivered/read status', async () => {
+      const { service } = buildService();
+      vi.spyOn(service as any, 'getMessageByKeyId').mockImplementation(async (_instance, id: string) => bridged[id]);
+
+      await (service as any).updateOutboundMessageStatuses(instance, [
+        { key: key('A'), status: 'delivered' },
+        { key: key('B'), status: 'read' },
+      ]);
+
+      expect(vi.mocked(chatwootRequest).mock.calls.map(([, options]) => options)).toEqual([
+        { method: 'PATCH', url: '/api/v1/accounts/42/conversations/7/messages/101', body: { status: 'delivered' } },
+        { method: 'PATCH', url: '/api/v1/accounts/42/conversations/7/messages/102', body: { status: 'read' } },
+      ]);
+    });
+
+    it('sends only the most advanced status when a batch has several receipts for one message', async () => {
+      const { service } = buildService();
+      vi.spyOn(service as any, 'getMessageByKeyId').mockImplementation(async (_instance, id: string) => bridged[id]);
+
+      await (service as any).updateOutboundMessageStatuses(instance, [
+        { key: key('A'), status: 'read' },
+        { key: key('A'), status: 'delivered' },
+      ]);
+
+      expect(chatwootRequest).toHaveBeenCalledTimes(1);
+      expect((vi.mocked(chatwootRequest).mock.calls[0][1] as any).body).toEqual({ status: 'read' });
+    });
+
+    it('skips messages that were never bridged to Chatwoot', async () => {
+      const { service } = buildService();
+      vi.spyOn(service as any, 'getMessageByKeyId').mockResolvedValue({ chatwootConversationId: 7 });
+
+      await (service as any).updateOutboundMessageStatuses(instance, [{ key: key('A'), status: 'delivered' }]);
+
+      expect(chatwootRequest).not.toHaveBeenCalled();
+    });
+
+    it('keeps updating the other messages when one Chatwoot call fails', async () => {
+      const { service } = buildService();
+      vi.spyOn(service as any, 'getMessageByKeyId').mockImplementation(async (_instance, id: string) => bridged[id]);
+      vi.mocked(chatwootRequest).mockRejectedValueOnce(new Error('boom'));
+
+      await expect(
+        (service as any).updateOutboundMessageStatuses(instance, [
+          { key: key('A'), status: 'delivered' },
+          { key: key('B'), status: 'delivered' },
+        ]),
+      ).resolves.not.toThrow();
+
+      expect(chatwootRequest).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('agent reply (Chatwoot) -> WhatsApp read receipts', () => {
     const storedMessage = (id: string, keyId: string) => ({
       id,
