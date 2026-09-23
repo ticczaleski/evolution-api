@@ -51,6 +51,11 @@ const REACTION_WEBHOOK_EVENTS = new Set([
   'message_reaction_deleted',
 ]);
 
+// A reaction crossing the bridge comes back as an echo on the other side (WhatsApp echoes our own
+// sent reaction; Chatwoot fires a webhook for the reaction we just created). Each side leaves a
+// short-lived marker (target message + emoji) so the other side recognizes and drops its echo.
+const REACTION_ECHO_MARKER_TTL_SECONDS = 120;
+
 export class ChatwootService {
   private readonly logger = new Logger('ChatwootService');
 
@@ -1654,6 +1659,17 @@ export class ChatwootService {
 
       const reaction = body.event === 'message_reaction_deleted' ? '' : body.emoji || '';
 
+      // This webhook is Chatwoot echoing a reaction we relayed from the account's own phone /
+      // WhatsApp Web: WhatsApp already has it, so don't send it back.
+      if (await this.consumeReactionMarker(this.ownDeviceReactionMarker(instance, targetKey.id, reaction))) {
+        return { message: 'bot' };
+      }
+
+      await this.cache.setNX(
+        this.dashboardReactionMarker(instance, targetKey.id, reaction),
+        true,
+        REACTION_ECHO_MARKER_TTL_SECONDS,
+      );
       await waInstance.reactionMessage({ key: targetKey, reaction });
 
       return { message: 'bot' };
@@ -1927,6 +1943,58 @@ export class ChatwootService {
     const reactionMessage: ReactionMessage | undefined = msg?.reactionMessage;
 
     return reactionMessage;
+  }
+
+  // A fromMe reaction is either the echo of one an agent made in Chatwoot (WhatsApp echoes our
+  // own sent reaction as an ordinary messages.upsert) or one made on a WhatsApp app connected to
+  // this same number (phone / WhatsApp Web). Drop the echo; relay the rest to Chatwoot without
+  // message_type, so Chatwoot attributes it to the integration token's user.
+  private async handleOwnDeviceReaction(
+    instance: InstanceDto,
+    reactionMessage: { key: { id: string; fromMe: boolean; remoteJid: string; participant?: string }; text: string },
+  ) {
+    const emoji = reactionMessage.text || '';
+
+    if (await this.consumeReactionMarker(this.dashboardReactionMarker(instance, reactionMessage.key.id, emoji))) {
+      return;
+    }
+
+    const targetMessage = await this.getMessageByKeyId(instance, reactionMessage.key.id);
+    if (!targetMessage?.chatwootMessageId || !targetMessage?.chatwootConversationId) {
+      this.logger.warn(
+        `Own-device WhatsApp reaction for an unknown message (key: ${reactionMessage.key.id}); acknowledging without retry`,
+      );
+      return;
+    }
+
+    const marker = this.ownDeviceReactionMarker(instance, reactionMessage.key.id, emoji);
+    await this.cache.setNX(marker, true, REACTION_ECHO_MARKER_TTL_SECONDS);
+
+    try {
+      await chatwootRequest(this.getClientCwConfig(), {
+        method: 'PUT',
+        url: `/api/v1/accounts/${this.provider.accountId}/conversations/${targetMessage.chatwootConversationId}/messages/${targetMessage.chatwootMessageId}/reaction`,
+        body: { emoji },
+      });
+    } catch (error) {
+      // Chatwoot never created the reaction, so no webhook echo will come to consume the marker.
+      await this.cache.delete(marker);
+      this.logger.error(error);
+    }
+  }
+
+  private dashboardReactionMarker(instance: InstanceDto, targetKeyId: string, emoji: string) {
+    return `${instance.instanceName}:reaction-from-chatwoot:${targetKeyId}:${emoji}`;
+  }
+
+  private ownDeviceReactionMarker(instance: InstanceDto, targetKeyId: string, emoji: string) {
+    return `${instance.instanceName}:reaction-from-own-device:${targetKeyId}:${emoji}`;
+  }
+
+  // Atomically removes the marker and reports whether it was there, so one marker drops
+  // exactly one echo.
+  private async consumeReactionMarker(marker: string): Promise<boolean> {
+    return ((await this.cache.delete(marker)) || 0) > 0;
   }
 
   // A WhatsApp contact's own reaction, relayed to Chatwoot as reaction state on the existing
@@ -2348,11 +2416,9 @@ export class ChatwootService {
         }
 
         if (reactionMessage) {
-          // WhatsApp echoes back a reaction this instance itself just sent (fromMe: true) as an
-          // ordinary messages.upsert event, indistinguishable in shape from one a contact sent.
-          // Relaying that echo to Chatwoot would double-count the agent's own reaction: once
-          // when it was created via the dashboard, and again here as a phantom Contact reaction.
-          if (!body.key.fromMe) {
+          if (body.key.fromMe) {
+            await this.handleOwnDeviceReaction(instance, reactionMessage);
+          } else {
             await this.handleInboundContactReaction(instance, reactionMessage);
           }
           return;
