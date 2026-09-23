@@ -1580,47 +1580,8 @@ export class ChatwootService {
         }
 
         const chatwootRead = this.configService.get<Chatwoot>('CHATWOOT').MESSAGE_READ;
-        if (chatwootRead) {
-          const lastMessage = await this.prismaRepository.message.findFirst({
-            where: {
-              key: {
-                path: ['fromMe'],
-                equals: false,
-              },
-              instanceId: instance.instanceId,
-            },
-          });
-          if (lastMessage && !lastMessage.chatwootIsRead) {
-            const key = lastMessage.key as WAMessageKey;
-
-            waInstance?.markMessageAsRead({
-              readMessages: [
-                {
-                  id: key.id,
-                  fromMe: key.fromMe,
-                  remoteJid: key.remoteJid,
-                },
-              ],
-            });
-            const updateMessage = {
-              chatwootMessageId: lastMessage.chatwootMessageId,
-              chatwootConversationId: lastMessage.chatwootConversationId,
-              chatwootInboxId: lastMessage.chatwootInboxId,
-              chatwootContactInboxSourceId: lastMessage.chatwootContactInboxSourceId,
-              chatwootIsRead: true,
-            };
-
-            await this.prismaRepository.message.updateMany({
-              where: {
-                instanceId: instance.instanceId,
-                key: {
-                  path: ['id'],
-                  equals: key.id,
-                },
-              },
-              data: updateMessage,
-            });
-          }
+        if (chatwootRead && body.conversation?.id) {
+          await this.markConversationReadOnWhatsapp(instance, waInstance, body.conversation.id);
         }
       }
 
@@ -1734,6 +1695,71 @@ export class ChatwootService {
         await chatwootImport.updateMessageSourceID(chatwootMessageIds.messageId, key.id);
       } catch (error) {
         this.logger.error(`Error updating Chatwoot message source ID: ${error}`);
+      }
+    }
+  }
+
+  // An agent replied from Chatwoot: send WhatsApp read receipts for the contact's messages in
+  // that same conversation that Chatwoot hasn't marked read yet (newest first, capped so a
+  // long-idle conversation can't produce one huge receipt batch).
+  private async markConversationReadOnWhatsapp(instance: InstanceDto, waInstance: any, conversationId: number) {
+    const unreadMessages = await this.prismaRepository.message.findMany({
+      where: {
+        instanceId: instance.instanceId,
+        chatwootConversationId: conversationId,
+        key: {
+          path: ['fromMe'],
+          equals: false,
+        },
+        OR: [{ chatwootIsRead: null }, { chatwootIsRead: false }],
+      },
+      orderBy: { messageTimestamp: 'desc' },
+      take: 50,
+    });
+
+    if (!unreadMessages.length) return;
+
+    try {
+      await waInstance?.markMessageAsRead({
+        readMessages: unreadMessages.map((message) => {
+          const key = message.key as WAMessageKey;
+          return { id: key.id, fromMe: key.fromMe, remoteJid: key.remoteJid };
+        }),
+      });
+    } catch (error) {
+      this.logger.error(`Error sending WhatsApp read receipts for conversation ${conversationId}: ${error}`);
+      return;
+    }
+
+    await this.prismaRepository.message.updateMany({
+      where: { id: { in: unreadMessages.map((message) => message.id) } },
+      data: { chatwootIsRead: true },
+    });
+  }
+
+  // Received messages were read on another device of this account (phone / WhatsApp Web).
+  // Chatwoot counts as unread every message created after the conversation's
+  // agent_last_seen_at, so advance it once per affected conversation.
+  private async markConversationsSeenFromWhatsapp(instance: InstanceDto, keys: WAMessageKey[]) {
+    const conversationIds = new Set<number>();
+
+    for (const key of keys) {
+      if (!key?.id) continue;
+
+      const message = await this.getMessageByKeyId(instance, key.id);
+      if (message?.chatwootConversationId) {
+        conversationIds.add(message.chatwootConversationId);
+      }
+    }
+
+    for (const conversationId of conversationIds) {
+      try {
+        await chatwootRequest(this.getClientCwConfig(), {
+          method: 'POST',
+          url: `/api/v1/accounts/${this.provider.accountId}/conversations/${conversationId}/update_last_seen`,
+        });
+      } catch (error) {
+        this.logger.error(`Error marking Chatwoot conversation ${conversationId} as seen: ${error}`);
       }
     }
   }
@@ -2536,6 +2562,10 @@ export class ChatwootService {
           }
         }
         return;
+      }
+
+      if (event === 'messages.read-self') {
+        return this.markConversationsSeenFromWhatsapp(instance, body?.keys || []);
       }
 
       if (event === 'messages.read') {
