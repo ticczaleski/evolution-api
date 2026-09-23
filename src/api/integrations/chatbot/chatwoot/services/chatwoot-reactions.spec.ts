@@ -16,6 +16,7 @@ const buildService = () => {
       claimedKeys.add(key);
       return true;
     }),
+    delete: vi.fn(async (key: string) => (claimedKeys.delete(key) ? 1 : 0)),
   } as any;
   const waMonitor = { waInstances: {} } as any;
   const configService = {} as any;
@@ -188,11 +189,104 @@ describe('ChatwootService reaction bridge', () => {
     });
   });
 
-  describe('eventWhatsapp: reaction echo from a self-sent reaction (messages.upsert)', () => {
-    // WhatsApp echoes back a reaction this instance itself just sent as an ordinary
-    // messages.upsert event (fromMe: true) — same shape as a contact's own reaction. Relaying
-    // that echo would double-count: once when the agent's reaction was created via the
-    // dashboard, and again here as a phantom Contact-actor reaction on the same message.
+  describe('own-device reactions (phone / WhatsApp Web on this same number)', () => {
+    const targetKey = { id: 'WA-KEY-1', remoteJid: '123@s.whatsapp.net', fromMe: false };
+    const ownReaction = { key: targetKey, text: '❤️' };
+    const bridgedTarget = { key: targetKey, chatwootMessageId: 77, chatwootConversationId: 88 };
+    const reactionWebhook = {
+      id: 900,
+      event: 'message_reaction_created',
+      actor_type: 'User',
+      emoji: '❤️',
+      message_id: 77,
+      source_id: `WAID:${targetKey.id}`,
+    };
+
+    it('relays a reaction made on the phone to Chatwoot as the integration user (no message_type)', async () => {
+      const { service } = buildService();
+      vi.spyOn(service as any, 'getMessageByKeyId').mockResolvedValue(bridgedTarget);
+
+      await (service as any).handleOwnDeviceReaction(instance, ownReaction);
+
+      expect(chatwootRequest).toHaveBeenCalledWith(expect.anything(), {
+        method: 'PUT',
+        url: '/api/v1/accounts/42/conversations/88/messages/77/reaction',
+        body: { emoji: '❤️' },
+      });
+    });
+
+    it('relays removing the reaction on the phone as an empty emoji', async () => {
+      const { service } = buildService();
+      vi.spyOn(service as any, 'getMessageByKeyId').mockResolvedValue(bridgedTarget);
+
+      await (service as any).handleOwnDeviceReaction(instance, { ...ownReaction, text: '' });
+
+      expect(chatwootRequest).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ body: { emoji: '' } }));
+    });
+
+    it('drops the WhatsApp echo of a reaction an agent made in Chatwoot', async () => {
+      const { service, waMonitor } = buildService();
+      waMonitor.waInstances[instance.instanceName] = { reactionMessage: vi.fn().mockResolvedValue({}) };
+      vi.spyOn(service as any, 'getMessageByKeyId').mockResolvedValue(bridgedTarget);
+
+      await (service as any).handleReactionWebhook(instance, reactionWebhook);
+      vi.mocked(chatwootRequest).mockClear();
+      await (service as any).handleOwnDeviceReaction(instance, ownReaction);
+
+      expect(chatwootRequest).not.toHaveBeenCalled();
+    });
+
+    it("does not send Chatwoot's webhook for a relayed phone reaction back to WhatsApp", async () => {
+      const { service, waMonitor } = buildService();
+      const reactionMessage = vi.fn().mockResolvedValue({});
+      waMonitor.waInstances[instance.instanceName] = { reactionMessage };
+      vi.spyOn(service as any, 'getMessageByKeyId').mockResolvedValue(bridgedTarget);
+
+      await (service as any).handleOwnDeviceReaction(instance, ownReaction);
+      await (service as any).handleReactionWebhook(instance, reactionWebhook);
+
+      expect(reactionMessage).not.toHaveBeenCalled();
+    });
+
+    it('still sends a later Chatwoot reaction with the same emoji once the echo was consumed', async () => {
+      const { service, waMonitor } = buildService();
+      const reactionMessage = vi.fn().mockResolvedValue({});
+      waMonitor.waInstances[instance.instanceName] = { reactionMessage };
+      vi.spyOn(service as any, 'getMessageByKeyId').mockResolvedValue(bridgedTarget);
+
+      await (service as any).handleOwnDeviceReaction(instance, ownReaction);
+      await (service as any).handleReactionWebhook(instance, reactionWebhook);
+      await (service as any).handleReactionWebhook(instance, { ...reactionWebhook, id: 901 });
+
+      expect(reactionMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears its marker when Chatwoot rejects the reaction, so no webhook is wrongly dropped later', async () => {
+      const { service, waMonitor } = buildService();
+      const reactionMessage = vi.fn().mockResolvedValue({});
+      waMonitor.waInstances[instance.instanceName] = { reactionMessage };
+      vi.spyOn(service as any, 'getMessageByKeyId').mockResolvedValue(bridgedTarget);
+      vi.mocked(chatwootRequest).mockRejectedValueOnce(new Error('boom'));
+
+      await (service as any).handleOwnDeviceReaction(instance, ownReaction);
+      await (service as any).handleReactionWebhook(instance, reactionWebhook);
+
+      expect(reactionMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('acknowledges a reaction on a message never bridged to Chatwoot', async () => {
+      const { service } = buildService();
+      vi.spyOn(service as any, 'getMessageByKeyId').mockResolvedValue(null);
+
+      await expect((service as any).handleOwnDeviceReaction(instance, ownReaction)).resolves.not.toThrow();
+      expect(chatwootRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('eventWhatsapp: fromMe reactions (messages.upsert)', () => {
+    // A fromMe reaction is either WhatsApp echoing one an agent sent from Chatwoot or one made on
+    // a WhatsApp app connected to this number; handleOwnDeviceReaction tells them apart. It must
+    // never be treated as the contact's reaction.
     const buildUpsertBody = (fromMe: boolean) => ({
       key: { id: 'WA-KEY-3', remoteJid: '123@s.whatsapp.net', fromMe },
       message: {
@@ -209,15 +303,17 @@ describe('ChatwootService reaction bridge', () => {
       vi.spyOn(service as any, 'isInteractiveButtonMessage').mockReturnValue(false);
     };
 
-    it('does not relay the echo of the instance own reaction to Chatwoot', async () => {
+    it('routes a fromMe reaction to the own-device handler, never as a contact reaction', async () => {
       const { service, waMonitor } = buildService();
       waMonitor.waInstances[instance.instanceName] = {};
       mockCommonDeps(service);
       const handleInboundContactReaction = vi.spyOn(service as any, 'handleInboundContactReaction');
+      const handleOwnDeviceReaction = vi.spyOn(service as any, 'handleOwnDeviceReaction').mockResolvedValue(undefined);
 
       await service.eventWhatsapp('messages.upsert', instance, buildUpsertBody(true));
 
       expect(handleInboundContactReaction).not.toHaveBeenCalled();
+      expect(handleOwnDeviceReaction).toHaveBeenCalledTimes(1);
     });
 
     it('still relays a genuine contact reaction (fromMe: false)', async () => {
