@@ -1562,6 +1562,9 @@ export class BaileysStartupService extends ChannelStartupService {
       // Received messages read on another device of this account (phone / WhatsApp Web),
       // relayed to Chatwoot once for the whole batch after the loop.
       const readSelfKeys: WAMessageKey[] = [];
+      // Delivery/read receipts from the contact for messages we sent, relayed to Chatwoot as
+      // each message's own status (the ticks) once for the whole batch after the loop.
+      const outboundStatusUpdates: { key: WAMessageKey; status: 'delivered' | 'read' }[] = [];
 
       for await (const { key, update } of args) {
         if (settings?.groupsIgnore && key.remoteJid?.includes('@g.us')) {
@@ -1603,6 +1606,13 @@ export class BaileysStartupService extends ChannelStartupService {
         // to a READ status on a key with fromMe=false.
         if (status[update.status] === 'READ' && !key.fromMe && key.id) {
           readSelfKeys.push(key);
+        }
+
+        if (key.fromMe && key.id) {
+          const receipt = status[update.status];
+          if (receipt === 'DELIVERY_ACK') outboundStatusUpdates.push({ key, status: 'delivered' });
+          // PLAYED (voice note listened to) implies it was read.
+          if (receipt === 'READ' || receipt === 'PLAYED') outboundStatusUpdates.push({ key, status: 'read' });
         }
 
         if (key.remoteJid !== 'status@broadcast' && key.id !== undefined) {
@@ -1742,6 +1752,18 @@ export class BaileysStartupService extends ChannelStartupService {
           'messages.read-self',
           { instanceName: this.instance.name, instanceId: this.instanceId },
           { keys: readSelfKeys },
+        );
+      }
+
+      if (
+        outboundStatusUpdates.length &&
+        this.configService.get<Chatwoot>('CHATWOOT').ENABLED &&
+        this.localChatwoot?.enabled
+      ) {
+        this.chatwootService.eventWhatsapp(
+          'messages.status',
+          { instanceName: this.instance.name, instanceId: this.instanceId },
+          { updates: outboundStatusUpdates },
         );
       }
     },
