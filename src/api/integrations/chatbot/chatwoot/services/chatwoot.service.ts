@@ -714,6 +714,17 @@ export class ChatwootService {
           this.cache.delete(cacheKey);
           return await this.createConversation(instance, body);
         }
+        if (this.provider.reopenConversation && conversationExists.status && conversationExists.status !== 'open') {
+          const targetStatus = this.provider.conversationPending ? 'pending' : 'open';
+          await client.conversations.toggleStatus({
+            accountId: this.provider.accountId,
+            conversationId: conversationId,
+            data: {
+              status: targetStatus,
+            },
+          });
+          conversationExists.status = targetStatus;
+        }
         return conversationId;
       }
 
@@ -853,14 +864,16 @@ export class ChatwootService {
             this.logger.verbose(
               `Found conversation in reopenConversation mode: ID: ${inboxConversation.id} - Name: ${inboxConversation.meta.sender.name} - Identifier: ${inboxConversation.meta.sender.identifier}`,
             );
-            if (inboxConversation && this.provider.conversationPending && inboxConversation.status !== 'open') {
+            if (inboxConversation && inboxConversation.status !== 'open') {
+              const targetStatus = this.provider.conversationPending ? 'pending' : 'open';
               await client.conversations.toggleStatus({
                 accountId: this.provider.accountId,
                 conversationId: inboxConversation.id,
                 data: {
-                  status: 'pending',
+                  status: targetStatus,
                 },
               });
+              inboxConversation.status = targetStatus;
             }
           } else {
             inboxConversation = contactConversations.payload.find(
