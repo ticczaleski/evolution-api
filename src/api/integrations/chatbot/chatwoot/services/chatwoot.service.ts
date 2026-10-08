@@ -2167,59 +2167,111 @@ export class ChatwootService {
     }
 
     if (typeKey === 'listMessage') {
-      const listTitle = result?.title || 'Unknown';
-      const listDescription = result?.description || 'Unknown';
-      const listFooter = result?.footerText || 'Unknown';
+      const parts: string[] = [];
 
-      let formattedList =
-        '*List Menu:*\n\n' +
-        '_Title_: ' +
-        listTitle +
-        '\n' +
-        '_Description_: ' +
-        listDescription +
-        '\n' +
-        '_Footer_: ' +
-        listFooter;
+      const listTitle = (result?.title || '').trim();
+      const listDescription = (result?.description || '').trim();
+      const listFooter = (result?.footerText || '').trim();
 
-      if (result.sections && result.sections.length > 0) {
-        result.sections.forEach((section, sectionIndex) => {
-          formattedList += '\n\n*Section ' + (sectionIndex + 1) + ':* ' + section.title || 'Unknown\n';
-
-          if (section.rows && section.rows.length > 0) {
-            section.rows.forEach((row, rowIndex) => {
-              formattedList += '\n*Line ' + (rowIndex + 1) + ':*\n';
-              formattedList += '_▪️ Title:_ ' + (row.title || 'Unknown') + '\n';
-              formattedList += '_▪️ Description:_ ' + (row.description || 'Unknown') + '\n';
-              formattedList += '_▪️ ID:_ ' + (row.rowId || 'Unknown') + '\n';
-            });
-          } else {
-            formattedList += '\nNo lines found in this section.\n';
-          }
-        });
-      } else {
-        formattedList += '\nNo sections found.\n';
+      if (listTitle) {
+        parts.push(`*${listTitle}*`);
       }
 
-      return formattedList;
+      if (listDescription) {
+        parts.push(listDescription);
+      }
+
+      if (!listTitle && !listDescription) {
+        parts.push(`*${i18next.t('cw.listMessage.menu', 'Menu')}*`);
+      }
+
+      if (Array.isArray(result?.sections) && result.sections.length > 0) {
+        const hasMultipleSections = result.sections.length > 1;
+        let globalRowIndex = 1;
+
+        result.sections.forEach((section: any, sectionIdx: number) => {
+          const sectionTitle = (section?.title || '').trim();
+          const sectionParts: string[] = [];
+
+          if (sectionTitle) {
+            sectionParts.push(`*${sectionTitle}*`);
+          } else if (hasMultipleSections) {
+            sectionParts.push(`*${i18next.t('cw.listMessage.section', 'Seção')} ${sectionIdx + 1}*`);
+          }
+
+          if (Array.isArray(section?.rows) && section.rows.length > 0) {
+            section.rows.forEach((row: any) => {
+              const rowTitle = (row?.title || '').trim();
+              const rowDescription = (row?.description || '').trim();
+
+              let displayTitle = rowTitle;
+              if (!displayTitle && row?.rowId) {
+                const rawId = String(row.rowId).trim();
+                if (rawId.startsWith('{')) {
+                  try {
+                    const parsed = JSON.parse(rawId);
+                    displayTitle = (parsed.button || parsed.title || parsed.text || '').trim();
+                  } catch {
+                    // Ignore JSON parse errors
+                  }
+                } else {
+                  displayTitle = rawId;
+                }
+              }
+
+              if (displayTitle) {
+                let rowLine = `${globalRowIndex}. ${displayTitle}`;
+                if (rowDescription) {
+                  rowLine += `\n   _${rowDescription}_`;
+                }
+                sectionParts.push(rowLine);
+                globalRowIndex++;
+              }
+            });
+          }
+
+          if (sectionParts.length > 0) {
+            parts.push(sectionParts.join('\n'));
+          }
+        });
+      }
+
+      if (listFooter) {
+        parts.push(`_${listFooter}_`);
+      }
+
+      return parts.join('\n\n');
     }
 
     if (typeKey === 'listResponseMessage') {
-      const responseTitle = result?.title || 'Unknown';
-      const responseDescription = result?.description || 'Unknown';
-      const responseRowId = result?.singleSelectReply?.selectedRowId || 'Unknown';
+      const responseTitle = (result?.title || '').trim();
+      const responseDescription = (result?.description || '').trim();
+      const selectedRowId = (result?.singleSelectReply?.selectedRowId || '').trim();
 
-      const formattedResponseList =
-        '*List Response:*\n\n' +
-        '_Title_: ' +
-        responseTitle +
-        '\n' +
-        '_Description_: ' +
-        responseDescription +
-        '\n' +
-        '_ID_: ' +
-        responseRowId;
-      return formattedResponseList;
+      let displayResponse = responseTitle;
+      if (!displayResponse && selectedRowId) {
+        if (selectedRowId.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(selectedRowId);
+            displayResponse = (parsed.button || parsed.title || parsed.text || '').trim();
+          } catch {
+            // Ignore JSON parse errors
+          }
+        } else {
+          displayResponse = selectedRowId;
+        }
+      }
+
+      if (!displayResponse) {
+        displayResponse = selectedRowId || i18next.t('cw.listResponseMessage.selected', 'Opção selecionada');
+      }
+
+      let formattedResponse = displayResponse;
+      if (responseDescription) {
+        formattedResponse += `\n_${responseDescription}_`;
+      }
+
+      return formattedResponse;
     }
 
     return result;

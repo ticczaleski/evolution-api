@@ -23,5 +23,8 @@
   "cw.contactMessage.number": "Number",
   "cw.message.notsent": "🚨 The message could not be sent. Please check your connection. {{error}}",
   "cw.message.numbernotinwhatsapp": "🚨 The message was not sent as the contact is not a valid Whatsapp number.",
-  "cw.message.edited": "Edited Message"
+  "cw.message.edited": "Edited Message",
+  "cw.listMessage.menu": "Menu",
+  "cw.listMessage.section": "Section",
+  "cw.listResponseMessage.selected": "Selected option"
 }
