@@ -92,6 +92,7 @@ import { useMultiFileAuthStateRedisDb } from '@utils/use-multi-file-auth-state-r
 import axios from 'axios';
 import makeWASocket, {
   AnyMessageContent,
+  BinaryNode,
   BufferedEventData,
   BufferJSON,
   CacheStore,
@@ -153,6 +154,7 @@ import { PassThrough, Readable } from 'stream';
 import { v4 } from 'uuid';
 
 import { BaileysMessageProcessor } from './baileysMessage.processor';
+import { buildInteractiveBizNode, buildListBizNode } from './helpers/interactiveMessage.helper';
 import { useVoiceCallsBaileys } from './voiceCalls/useVoiceCallsBaileys';
 
 export interface ExtendedIMessageKey extends proto.IMessageKey {
@@ -2175,6 +2177,7 @@ export class BaileysStartupService extends ChannelStartupService {
     messageId?: string,
     ephemeralExpiration?: number,
     contextInfo?: any,
+    additionalNodes?: BinaryNode[],
     // participants?: GroupParticipant[],
   ) {
     sender = sender.toLowerCase();
@@ -2194,14 +2197,17 @@ export class BaileysStartupService extends ChannelStartupService {
     // NOTE: NÃO DEVEMOS GERAR O messageId AQUI, SOMENTE SE VIER INFORMADO POR PARAMETRO. A GERAÇÃO ANTERIOR IMPEDE O WZAP DE IDENTIFICAR A SOURCE.
     if (messageId) option.messageId = messageId;
 
-    if (message['viewOnceMessage']) {
+    if (message['viewOnceMessage'] || message['interactiveMessage'] || message['listMessage']) {
       const m = generateWAMessageFromContent(sender, message, {
         timestamp: new Date(),
         userJid: this.instance.wuid,
         messageId,
         quoted,
       });
-      const id = await this.client.relayMessage(sender, message, { messageId });
+      const id = await this.client.relayMessage(sender, message, {
+        messageId,
+        ...(additionalNodes?.length ? { additionalNodes } : {}),
+      });
       m.key = { id: id, remoteJid: sender, participant: isPnUser(sender) ? sender : undefined, fromMe: true };
       for (const [key, value] of Object.entries(m)) {
         if (!value || (isArray(value) && value.length) === 0) {
@@ -2330,6 +2336,7 @@ export class BaileysStartupService extends ChannelStartupService {
     message: T,
     options?: Options,
     isIntegration = false,
+    additionalNodes?: BinaryNode[],
   ) {
     const isWA = (await this.whatsappNumber({ numbers: [number] }))?.shift();
 
@@ -2431,6 +2438,8 @@ export class BaileysStartupService extends ChannelStartupService {
           quoted,
           null,
           group?.ephemeralDuration,
+          undefined,
+          additionalNodes,
           // group?.participants,
         );
       } else {
@@ -2454,6 +2463,7 @@ export class BaileysStartupService extends ChannelStartupService {
           null,
           undefined,
           contextInfo,
+          additionalNodes,
         );
       }
 
@@ -3378,25 +3388,27 @@ export class BaileysStartupService extends ChannelStartupService {
       }
 
       const message: proto.IMessage = {
-        viewOnceMessage: {
-          message: {
-            interactiveMessage: {
-              nativeFlowMessage: {
-                buttons: [{ name: this.mapType.get('pix'), buttonParamsJson: this.toJSONString(data.buttons[0]) }],
-                messageParamsJson: JSON.stringify({ from: 'api', templateId: v4() }),
-              },
-            },
+        interactiveMessage: {
+          nativeFlowMessage: {
+            buttons: [{ name: this.mapType.get('pix'), buttonParamsJson: this.toJSONString(data.buttons[0]) }],
+            messageParamsJson: JSON.stringify({ from: 'api', templateId: v4() }),
           },
         },
       };
 
-      return await this.sendMessageWithTyping(data.number, message, {
-        delay: data?.delay,
-        presence: 'composing',
-        quoted: data?.quoted,
-        mentionsEveryOne: data?.mentionsEveryOne,
-        mentioned: data?.mentioned,
-      });
+      return await this.sendMessageWithTyping(
+        data.number,
+        message,
+        {
+          delay: data?.delay,
+          presence: 'composing',
+          quoted: data?.quoted,
+          mentionsEveryOne: data?.mentionsEveryOne,
+          mentioned: data?.mentioned,
+        },
+        false,
+        [buildInteractiveBizNode()],
+      );
     }
 
     const generate = await (async () => {
@@ -3410,45 +3422,47 @@ export class BaileysStartupService extends ChannelStartupService {
     });
 
     const message: proto.IMessage = {
-      viewOnceMessage: {
-        message: {
-          interactiveMessage: {
-            body: {
-              text: (() => {
-                let t = '*' + data.title + '*';
-                if (data?.description) {
-                  t += '\n\n';
-                  t += data.description;
-                  t += '\n';
-                }
-                return t;
-              })(),
-            },
-            footer: { text: data?.footer },
-            header: (() => {
-              if (generate?.message?.imageMessage) {
-                return {
-                  hasMediaAttachment: !!generate.message.imageMessage,
-                  imageMessage: generate.message.imageMessage,
-                };
-              }
-            })(),
-            nativeFlowMessage: {
-              buttons: buttons,
-              messageParamsJson: JSON.stringify({ from: 'api', templateId: v4() }),
-            },
-          },
+      interactiveMessage: {
+        body: {
+          text: (() => {
+            let t = '*' + data.title + '*';
+            if (data?.description) {
+              t += '\n\n';
+              t += data.description;
+              t += '\n';
+            }
+            return t;
+          })(),
+        },
+        footer: data?.footer ? { text: data.footer } : undefined,
+        header: (() => {
+          if (generate?.message?.imageMessage) {
+            return {
+              hasMediaAttachment: !!generate.message.imageMessage,
+              imageMessage: generate.message.imageMessage,
+            };
+          }
+        })(),
+        nativeFlowMessage: {
+          buttons: buttons,
+          messageParamsJson: JSON.stringify({ from: 'api', templateId: v4() }),
         },
       },
     };
 
-    return await this.sendMessageWithTyping(data.number, message, {
-      delay: data?.delay,
-      presence: 'composing',
-      quoted: data?.quoted,
-      mentionsEveryOne: data?.mentionsEveryOne,
-      mentioned: data?.mentioned,
-    });
+    return await this.sendMessageWithTyping(
+      data.number,
+      message,
+      {
+        delay: data?.delay,
+        presence: 'composing',
+        quoted: data?.quoted,
+        mentionsEveryOne: data?.mentionsEveryOne,
+        mentioned: data?.mentioned,
+      },
+      false,
+      [buildInteractiveBizNode()],
+    );
   }
 
   public async locationMessage(data: SendLocationDto) {
@@ -3473,18 +3487,27 @@ export class BaileysStartupService extends ChannelStartupService {
   }
 
   public async listMessage(data: SendListDto) {
+    const message: proto.IMessage = {
+      listMessage: {
+        title: data.title || '',
+        description: data.description || '',
+        buttonText: data.buttonText || 'Ver Menu',
+        footerText: data?.footerText || '',
+        listType: proto.Message.ListMessage.ListType.SINGLE_SELECT,
+        sections: (data.sections || []).map((section) => ({
+          title: section.title || '',
+          rows: (section.rows || []).map((row) => ({
+            title: row.title || '',
+            description: row.description || '',
+            rowId: row.rowId || '',
+          })),
+        })),
+      },
+    };
+
     return await this.sendMessageWithTyping(
       data.number,
-      {
-        listMessage: {
-          title: data.title,
-          description: data.description,
-          buttonText: data?.buttonText,
-          footerText: data?.footerText,
-          sections: data.sections,
-          listType: 2,
-        },
-      },
+      message,
       {
         delay: data?.delay,
         presence: 'composing',
@@ -3492,6 +3515,8 @@ export class BaileysStartupService extends ChannelStartupService {
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
       },
+      false,
+      [buildListBizNode()],
     );
   }
 
