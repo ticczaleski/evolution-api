@@ -3278,10 +3278,183 @@ export class ChatwootService {
       }
     }
 
+    // 3. Text command or block syntax in message content (/botoes, /lista, [botoes], etc)
+    const textInteractive = this.parseInteractiveTextContent(body?.content || formatText);
+    if (textInteractive && textInteractive.items.length > 0) {
+      const items = textInteractive.items;
+      const title = textInteractive.title;
+
+      const fallbackOptionsText = items
+        .map((item, i) => `${i + 1}. ${item.title}${item.description ? ` - ${item.description}` : ''}`)
+        .join('\n');
+      const fallbackText = `*${title}*\n\n${fallbackOptionsText}`;
+      const fallbackTextDto: SendTextDto = {
+        number: chatId,
+        text: fallbackText,
+        delay,
+        quoted,
+      };
+
+      if (textInteractive.type === 'buttons' && items.length <= 3) {
+        const buttonsData: SendButtonsDto = {
+          number: chatId,
+          title,
+          buttons: items.map((item) => ({
+            type: 'reply' as const,
+            displayText: item.title,
+            id: item.value,
+          })),
+          delay,
+          quoted,
+        };
+        return {
+          type: 'buttons',
+          buttonsData,
+          fallbackTextData: fallbackTextDto,
+        };
+      }
+
+      // Native List drawer menu
+      const listData: SendListDto = {
+        number: chatId,
+        title,
+        description: 'Selecione uma opção abaixo:',
+        buttonText: 'Selecionar Opção',
+        footerText: this.provider?.organization || 'TI CCZaleski',
+        sections: [
+          {
+            title: 'Opções Disponíveis',
+            rows: items.map((item) => ({
+              title: item.title,
+              description: item.description || '',
+              rowId: item.value,
+            })),
+          },
+        ],
+        delay,
+        quoted,
+      };
+      return {
+        type: 'list',
+        listData,
+        fallbackTextData: fallbackTextDto,
+      };
+    }
+
     // Default: plain text message
     return {
       type: 'text',
       textData: defaultTextDto,
     };
+  }
+
+  public parseInteractiveTextContent(rawContent: string): {
+    isInteractive: boolean;
+    type: 'buttons' | 'list';
+    title: string;
+    items: Array<{ title: string; value: string; description?: string }>;
+  } | null {
+    if (!rawContent || typeof rawContent !== 'string') return null;
+
+    const trimmed = rawContent.trim();
+
+    // 1. Bloco [botoes]...[/botoes] ou [buttons]...[/buttons]
+    const buttonsBlockRegex = /\[(?:botoes|botões|buttons)(?::\s*([^\]]+))?\]([\s\S]*?)\[\/(?:botoes|botões|buttons)\]/i;
+    const buttonsMatch = trimmed.match(buttonsBlockRegex);
+    if (buttonsMatch) {
+      const inlineTitle = (buttonsMatch[1] || '').trim();
+      const blockBody = buttonsMatch[2].trim();
+      const parsed = this.parseInteractiveBlockLines(blockBody, inlineTitle);
+      if (parsed.items.length > 0) {
+        return {
+          isInteractive: true,
+          type: parsed.items.length <= 3 ? 'buttons' : 'list',
+          title: parsed.title || 'Opções',
+          items: parsed.items,
+        };
+      }
+    }
+
+    // 2. Bloco [lista]...[/lista] ou [list]...[/list]
+    const listBlockRegex = /\[(?:lista|list)(?::\s*([^\]]+))?\]([\s\S]*?)\[\/(?:lista|list)\]/i;
+    const listMatch = trimmed.match(listBlockRegex);
+    if (listMatch) {
+      const inlineTitle = (listMatch[1] || '').trim();
+      const blockBody = listMatch[2].trim();
+      const parsed = this.parseInteractiveBlockLines(blockBody, inlineTitle);
+      if (parsed.items.length > 0) {
+        return {
+          isInteractive: true,
+          type: 'list',
+          title: parsed.title || 'Opções',
+          items: parsed.items,
+        };
+      }
+    }
+
+    // 3. Comando em linha: /botoes, /botões, /buttons, /lista, /list, /menu
+    const commandLineRegex = /^\s*\/(botoes|botões|buttons|lista|list|menu)\b\s*(.*)$/im;
+    const cmdMatch = trimmed.match(commandLineRegex);
+    if (cmdMatch) {
+      const cmdType = cmdMatch[1].toLowerCase();
+      const cmdArgs = cmdMatch[2].trim();
+
+      if (cmdArgs.includes('|')) {
+        const parts = cmdArgs.split('|').map((p) => p.trim()).filter(Boolean);
+        if (parts.length >= 2) {
+          const title = parts[0];
+          const rawOptions = parts.slice(1);
+          const items = rawOptions.map((opt, idx) => ({
+            title: opt,
+            value: `opt_${idx + 1}`,
+          }));
+
+          const isListCmd = cmdType === 'lista' || cmdType === 'list' || items.length > 3;
+          return {
+            isInteractive: true,
+            type: isListCmd ? 'list' : 'buttons',
+            title,
+            items,
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private parseInteractiveBlockLines(body: string, defaultTitle: string) {
+    const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
+    let title = defaultTitle;
+    const items: Array<{ title: string; value: string; description?: string }> = [];
+
+    for (const line of lines) {
+      const itemMatch = line.match(/^(?:[-*•]|\d+[.)])\s*(.+)$/);
+      if (itemMatch) {
+        const itemText = itemMatch[1].trim();
+        const descMatch = itemText.match(/^(.+?)\s*(?:[-–—|])\s*(.+)$/);
+        if (descMatch) {
+          items.push({
+            title: descMatch[1].trim(),
+            description: descMatch[2].trim(),
+            value: `opt_${items.length + 1}`,
+          });
+        } else {
+          items.push({
+            title: itemText,
+            value: `opt_${items.length + 1}`,
+          });
+        }
+      } else if (!title) {
+        title = line;
+      } else {
+        items.push({
+          title: line,
+          value: `opt_${items.length + 1}`,
+        });
+      }
+    }
+
+    return { title, items };
   }
 }

@@ -199,4 +199,82 @@ describe('ChatwootService - parseChatwootOutgoingMessage (Interactive Messages)'
       expect(result.listData?.sections[0].rows[0].rowId).toBe('sec_acougue');
     });
   });
+
+  describe('Text Commands & Block Syntax for Chatwoot Agents', () => {
+    it('parses single line command /botoes with <= 3 options into buttons', () => {
+      const body = {
+        id: 107,
+        content: '/botoes Como podemos ajudar? | Suporte TI | Dúvidas ERP | Falar com Atendente',
+        content_type: 'text',
+      };
+
+      const result = service.parseChatwootOutgoingMessage(body, testChatId, body.content);
+
+      expect(result.type).toBe('buttons');
+      expect(result.buttonsData?.title).toBe('Como podemos ajudar?');
+      expect(result.buttonsData?.buttons).toHaveLength(3);
+      expect(result.buttonsData?.buttons[0].displayText).toBe('Suporte TI');
+      expect(result.buttonsData?.buttons[1].displayText).toBe('Dúvidas ERP');
+      expect(result.buttonsData?.buttons[2].displayText).toBe('Falar com Atendente');
+      expect(result.fallbackTextData?.text).toContain('1. Suporte TI');
+    });
+
+    it('parses single line command /lista into list drawer menu', () => {
+      const body = {
+        id: 108,
+        content: '/lista Menu de Serviços TI | Abertura GLPI | Consulta GLPI | Suporte PDV | Balanças',
+        content_type: 'text',
+      };
+
+      const result = service.parseChatwootOutgoingMessage(body, testChatId, body.content);
+
+      expect(result.type).toBe('list');
+      expect(result.listData?.title).toBe('Menu de Serviços TI');
+      expect(result.listData?.sections[0].rows).toHaveLength(4);
+      expect(result.listData?.sections[0].rows[0].title).toBe('Abertura GLPI');
+      expect(result.listData?.sections[0].rows[3].title).toBe('Balanças');
+    });
+
+    it('parses block syntax [botoes]...[/botoes] into buttons', () => {
+      const body = {
+        id: 109,
+        content: `[botoes: Confirmação de Visita Técnica]
+- Sim, confirmo
+- Não, reagendar
+[/botoes]`,
+        content_type: 'text',
+      };
+
+      const result = service.parseChatwootOutgoingMessage(body, testChatId, body.content);
+
+      expect(result.type).toBe('buttons');
+      expect(result.buttonsData?.title).toBe('Confirmação de Visita Técnica');
+      expect(result.buttonsData?.buttons).toHaveLength(2);
+      expect(result.buttonsData?.buttons[0].displayText).toBe('Sim, confirmo');
+      expect(result.buttonsData?.buttons[1].displayText).toBe('Não, reagendar');
+    });
+
+    it('parses block syntax [lista]...[/lista] with descriptions into list menu', () => {
+      const body = {
+        id: 110,
+        content: `[lista: Menu Central da TI]
+1. GLPI Chamados - Abrir ou consultar tickets
+2. Suporte PDVs - Problemas em caixas e self-checkouts
+3. Balanças Toledo - Calibração e impressão
+4. Rede e Wi-Fi - Lentidão ou quedas
+[/lista]`,
+        content_type: 'text',
+      };
+
+      const result = service.parseChatwootOutgoingMessage(body, testChatId, body.content);
+
+      expect(result.type).toBe('list');
+      expect(result.listData?.title).toBe('Menu Central da TI');
+      expect(result.listData?.sections[0].rows).toHaveLength(4);
+      expect(result.listData?.sections[0].rows[0].title).toBe('GLPI Chamados');
+      expect(result.listData?.sections[0].rows[0].description).toBe('Abrir ou consultar tickets');
+      expect(result.listData?.sections[0].rows[1].title).toBe('Suporte PDVs');
+    });
+  });
 });
+
