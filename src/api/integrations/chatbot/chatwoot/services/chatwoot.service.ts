@@ -1,5 +1,5 @@
 import { InstanceDto } from '@api/dto/instance.dto';
-import { Options, Quoted, SendAudioDto, SendMediaDto, SendTextDto } from '@api/dto/sendMessage.dto';
+import { Button, Options, Quoted, SendAudioDto, SendButtonsDto, SendListDto, SendMediaDto, SendTextDto } from '@api/dto/sendMessage.dto';
 import { ChatwootDto } from '@api/integrations/chatbot/chatwoot/dto/chatwoot.dto';
 import { postgresClient } from '@api/integrations/chatbot/chatwoot/libs/postgres.client';
 import { ChatwootDeliveryService } from '@api/integrations/chatbot/chatwoot/services/chatwoot-delivery.service';
@@ -1545,18 +1545,44 @@ export class ChatwootService {
               }
             }
           } else {
-            const data: SendTextDto = {
-              number: chatId,
-              text: formatText,
-              delay: Math.floor(Math.random() * (2000 - 500 + 1)) + 500,
-              quoted: await this.getQuotedMessage(body, instance),
-            };
-
-            sendTelemetry('/message/sendText');
+            const parsed = this.parseChatwootOutgoingMessage(
+              body,
+              chatId,
+              formatText,
+              await this.getQuotedMessage(body, instance),
+            );
 
             let messageSent: any;
             try {
-              messageSent = await waInstance?.textMessage(data, true);
+              if (parsed.type === 'buttons' && parsed.buttonsData && typeof waInstance?.buttonMessage === 'function') {
+                sendTelemetry('/message/sendButtons');
+                try {
+                  messageSent = await waInstance.buttonMessage(parsed.buttonsData, true);
+                } catch (btnErr) {
+                  this.logger.warn(`Failed to send button message, attempting text fallback: ${btnErr}`);
+                  if (parsed.fallbackTextData) {
+                    messageSent = await waInstance?.textMessage(parsed.fallbackTextData, true);
+                  } else {
+                    throw btnErr;
+                  }
+                }
+              } else if (parsed.type === 'list' && parsed.listData && typeof waInstance?.listMessage === 'function') {
+                sendTelemetry('/message/sendList');
+                try {
+                  messageSent = await waInstance.listMessage(parsed.listData, true);
+                } catch (listErr) {
+                  this.logger.warn(`Failed to send list message, attempting text fallback: ${listErr}`);
+                  if (parsed.fallbackTextData) {
+                    messageSent = await waInstance?.textMessage(parsed.fallbackTextData, true);
+                  } else {
+                    throw listErr;
+                  }
+                }
+              } else {
+                sendTelemetry('/message/sendText');
+                messageSent = await waInstance?.textMessage(parsed.textData || parsed.fallbackTextData, true);
+              }
+
               if (!messageSent) {
                 throw new Error('Message not sent');
               }
@@ -3042,4 +3068,214 @@ export class ChatwootService {
       return;
     }
   }
+
+  public parseChatwootOutgoingMessage(
+    body: any,
+    chatId: string,
+    formatText: string,
+    quoted?: Quoted,
+  ): {
+    type: 'buttons' | 'list' | 'text';
+    buttonsData?: SendButtonsDto;
+    listData?: SendListDto;
+    textData?: SendTextDto;
+    fallbackTextData?: SendTextDto;
+  } {
+    const delay = Math.floor(Math.random() * (2000 - 500 + 1)) + 500;
+    const baseText = formatText || body?.content || '';
+    const contentAttributes = body?.content_attributes || {};
+    const contentType = body?.content_type || 'text';
+
+    const defaultTextDto: SendTextDto = {
+      number: chatId,
+      text: baseText,
+      delay,
+      quoted,
+    };
+
+    // 1. Explicit Buttons in content_attributes.buttons
+    if (Array.isArray(contentAttributes.buttons) && contentAttributes.buttons.length > 0) {
+      const parsedButtons: Button[] = contentAttributes.buttons.map((btn: any, index: number) => {
+        const displayText = btn.displayText || btn.text || btn.title || `Opção ${index + 1}`;
+        const rawType = String(btn.type || 'reply').toLowerCase();
+
+        if (rawType === 'url' || rawType === 'link') {
+          return {
+            type: 'url' as const,
+            displayText,
+            url: btn.url || btn.uri || btn.link,
+          };
+        }
+        if (rawType === 'call' || rawType === 'phone') {
+          return {
+            type: 'call' as const,
+            displayText,
+            phoneNumber: btn.phoneNumber || btn.phone || btn.number,
+          };
+        }
+        if (rawType === 'copy' || rawType === 'code') {
+          return {
+            type: 'copy' as const,
+            displayText,
+            copyCode: btn.copyCode || btn.code || btn.copy_code,
+          };
+        }
+        if (rawType === 'pix') {
+          return {
+            type: 'pix' as const,
+            name: btn.name || 'PIX',
+            key: btn.key,
+            keyType: (btn.keyType || btn.key_type || 'random').toLowerCase() as any,
+            currency: btn.currency || 'BRL',
+          };
+        }
+        return {
+          type: 'reply' as const,
+          displayText,
+          id: String(btn.id ?? btn.value ?? btn.payload ?? displayText ?? index + 1),
+        };
+      });
+
+      const hasReply = parsedButtons.some((b) => b.type === 'reply');
+      const hasCTA = parsedButtons.some((b) => b.type === 'url' || b.type === 'call' || b.type === 'copy');
+      const hasPix = parsedButtons.some((b) => b.type === 'pix');
+
+      const fallbackOptionsText = parsedButtons
+        .map((b, i) => `${i + 1}. ${b.displayText}`)
+        .join('\n');
+      const fallbackText = baseText ? `${baseText}\n\n${fallbackOptionsText}` : fallbackOptionsText;
+      const fallbackTextDto: SendTextDto = {
+        number: chatId,
+        text: fallbackText,
+        delay,
+        quoted,
+      };
+
+      // If only reply buttons and > 3: convert to listMessage (WhatsApp limit is max 3 reply buttons)
+      if (hasReply && !hasCTA && !hasPix && parsedButtons.length > 3) {
+        const listData: SendListDto = {
+          number: chatId,
+          title: contentAttributes.title || baseText || 'Opções',
+          description: contentAttributes.description || (contentAttributes.title ? baseText : ''),
+          buttonText: contentAttributes.button_text || 'Selecionar',
+          footerText: contentAttributes.footer || '',
+          sections: [
+            {
+              title: contentAttributes.section_title || 'Opções',
+              rows: parsedButtons.map((btn, index) => ({
+                title: btn.displayText,
+                description: '',
+                rowId: btn.id || String(index + 1),
+              })),
+            },
+          ],
+          delay,
+          quoted,
+        };
+        return {
+          type: 'list',
+          listData,
+          fallbackTextData: fallbackTextDto,
+        };
+      }
+
+      // Valid buttons payload (<= 3 reply, or <= 2 CTA, or 1 PIX)
+      const buttonsData: SendButtonsDto = {
+        number: chatId,
+        title: contentAttributes.title || baseText || 'Opções',
+        description: contentAttributes.description || (contentAttributes.title ? baseText : undefined),
+        footer: contentAttributes.footer,
+        thumbnailUrl: contentAttributes.thumbnail_url || contentAttributes.media_url,
+        buttons: parsedButtons,
+        delay,
+        quoted,
+      };
+
+      return {
+        type: 'buttons',
+        buttonsData,
+        fallbackTextData: fallbackTextDto,
+      };
+    }
+
+    // 2. Chatwoot input_select or items list (Options / Single Select)
+    const hasItems = Array.isArray(contentAttributes.items) && contentAttributes.items.length > 0;
+    if (contentType === 'input_select' || (hasItems && contentType !== 'cards')) {
+      const items: Array<{ title: string; value: string; description?: string }> = (
+        contentAttributes.items || []
+      ).map((item: any, index: number) => ({
+        title: String(item.title ?? item.value ?? `Opção ${index + 1}`),
+        value: String(item.value ?? item.id ?? item.title ?? index + 1),
+        description: item.description || '',
+      }));
+
+      if (items.length > 0) {
+        const fallbackOptionsText = items
+          .map((item, i) => `${i + 1}. ${item.title}${item.description ? ` - ${item.description}` : ''}`)
+          .join('\n');
+        const fallbackText = baseText ? `${baseText}\n\n${fallbackOptionsText}` : fallbackOptionsText;
+        const fallbackTextDto: SendTextDto = {
+          number: chatId,
+          text: fallbackText,
+          delay,
+          quoted,
+        };
+
+        // If <= 3 items: send as 1-tap quick reply buttons!
+        if (items.length <= 3) {
+          const buttonsData: SendButtonsDto = {
+            number: chatId,
+            title: contentAttributes.title || baseText || 'Opções',
+            description: contentAttributes.description || (contentAttributes.title ? baseText : undefined),
+            footer: contentAttributes.footer,
+            buttons: items.map((item) => ({
+              type: 'reply' as const,
+              displayText: item.title,
+              id: item.value,
+            })),
+            delay,
+            quoted,
+          };
+          return {
+            type: 'buttons',
+            buttonsData,
+            fallbackTextData: fallbackTextDto,
+          };
+        }
+
+        // If > 3 items: send as native list drawer menu!
+        const listData: SendListDto = {
+          number: chatId,
+          title: contentAttributes.title || baseText || 'Opções',
+          description: contentAttributes.description || (contentAttributes.title ? baseText : ''),
+          buttonText: contentAttributes.button_text || 'Selecionar',
+          footerText: contentAttributes.footer || '',
+          sections: [
+            {
+              title: contentAttributes.section_title || 'Opções',
+              rows: items.map((item) => ({
+                title: item.title,
+                description: item.description || '',
+                rowId: item.value,
+              })),
+            },
+          ],
+          delay,
+          quoted,
+        };
+        return {
+          type: 'list',
+          listData,
+          fallbackTextData: fallbackTextDto,
+        };
+      }
+    }
+
+    // Default: plain text message
+    return {
+      type: 'text',
+      textData: defaultTextDto,
+    };
+  }
 }
+
