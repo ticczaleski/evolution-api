@@ -1,5 +1,14 @@
 import { InstanceDto } from '@api/dto/instance.dto';
-import { Button, Options, Quoted, SendAudioDto, SendButtonsDto, SendListDto, SendMediaDto, SendTextDto } from '@api/dto/sendMessage.dto';
+import {
+  Button,
+  Options,
+  Quoted,
+  SendAudioDto,
+  SendButtonsDto,
+  SendListDto,
+  SendMediaDto,
+  SendTextDto,
+} from '@api/dto/sendMessage.dto';
 import { ChatwootDto } from '@api/integrations/chatbot/chatwoot/dto/chatwoot.dto';
 import { postgresClient } from '@api/integrations/chatbot/chatwoot/libs/postgres.client';
 import { ChatwootDeliveryService } from '@api/integrations/chatbot/chatwoot/services/chatwoot-delivery.service';
@@ -3140,9 +3149,7 @@ export class ChatwootService {
       const hasCTA = parsedButtons.some((b) => b.type === 'url' || b.type === 'call' || b.type === 'copy');
       const hasPix = parsedButtons.some((b) => b.type === 'pix');
 
-      const fallbackOptionsText = parsedButtons
-        .map((b, i) => `${i + 1}. ${b.displayText}`)
-        .join('\n');
+      const fallbackOptionsText = parsedButtons.map((b, i) => `${i + 1}. ${b.displayText}`).join('\n');
       const fallbackText = baseText ? `${baseText}\n\n${fallbackOptionsText}` : fallbackOptionsText;
       const fallbackTextDto: SendTextDto = {
         number: chatId,
@@ -3201,13 +3208,13 @@ export class ChatwootService {
     // 2. Chatwoot input_select or items list (Options / Single Select)
     const hasItems = Array.isArray(contentAttributes.items) && contentAttributes.items.length > 0;
     if (contentType === 'input_select' || (hasItems && contentType !== 'cards')) {
-      const items: Array<{ title: string; value: string; description?: string }> = (
-        contentAttributes.items || []
-      ).map((item: any, index: number) => ({
-        title: String(item.title ?? item.value ?? `Opção ${index + 1}`),
-        value: String(item.value ?? item.id ?? item.title ?? index + 1),
-        description: item.description || '',
-      }));
+      const items: Array<{ title: string; value: string; description?: string }> = (contentAttributes.items || []).map(
+        (item: any, index: number) => ({
+          title: String(item.title ?? item.value ?? `Opção ${index + 1}`),
+          value: String(item.value ?? item.id ?? item.title ?? index + 1),
+          description: item.description || '',
+        }),
+      );
 
       if (items.length > 0) {
         const fallbackOptionsText = items
@@ -3278,4 +3285,3 @@ export class ChatwootService {
     };
   }
 }
-

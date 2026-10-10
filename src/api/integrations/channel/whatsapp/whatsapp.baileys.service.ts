@@ -92,6 +92,7 @@ import { useMultiFileAuthStateRedisDb } from '@utils/use-multi-file-auth-state-r
 import axios from 'axios';
 import makeWASocket, {
   AnyMessageContent,
+  BinaryNode,
   BufferedEventData,
   BufferJSON,
   CacheStore,
@@ -130,7 +131,6 @@ import makeWASocket, {
   WAMessageKey,
   WAPresence,
   WASocket,
-  BinaryNode,
 } from 'baileys';
 import { Label } from 'baileys/lib/Types/Label';
 import { LabelAssociation } from 'baileys/lib/Types/LabelAssociation';
@@ -154,8 +154,8 @@ import { PassThrough, Readable } from 'stream';
 import { v4 } from 'uuid';
 
 import { BaileysMessageProcessor } from './baileysMessage.processor';
+import { buildInteractiveBizNode, buildListBizNode } from './helpers/interactiveMessage.helper';
 import { useVoiceCallsBaileys } from './voiceCalls/useVoiceCallsBaileys';
-import { buildInteractiveBizNode, buildListBizNode, toNativeFlowButton } from './helpers/interactiveMessage.helper';
 
 export interface ExtendedIMessageKey extends proto.IMessageKey {
   remoteJidAlt?: string;
