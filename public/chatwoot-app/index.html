@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ações & Menus WhatsApp — TI CCZaleski</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #111b21;
+      --bg-panel: #202c33;
+      --bg-input: #2a3942;
+      --bg-hover: #374248;
+      --text-primary: #e9edef;
+      --text-secondary: #8696a0;
+      --text-muted: #667781;
+      --accent-green: #00a884;
+      --accent-green-hover: #02906f;
+      --border-color: #2f3b43;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 2px 5px rgba(0,0,0,0.2);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 12px;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header e Info do Contato */
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 14px;
+    }
+
+    .contact-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .contact-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #005c4b;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .contact-details h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      max-width: 170px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .contact-details p {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      margin-right: 4px;
+    }
+
+    /* Grid de Gaveta (Idêntica ao WhatsApp) */
+    .drawer-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .actions-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .action-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-panel);
+      border: 1px solid transparent;
+      border-radius: var(--radius-md);
+      padding: 12px 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    .action-btn:hover {
+      background: var(--bg-hover);
+      transform: translateY(-2px);
+      border-color: var(--border-color);
+    }
+
+    .action-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .action-icon svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .action-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    /* Cores dos Ícones idênticas ao WhatsApp */
+    .icon-poll { background: linear-gradient(135deg, #f97316, #eab308); color: #fff; }
+    .icon-buttons { background: linear-gradient(135deg, #0ea5e9, #2563eb); color: #fff; }
+    .icon-list { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; }
+    .icon-pix { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
+    .icon-location { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; }
+    .icon-contact { background: linear-gradient(135deg, #06b6d4, #0284c7); color: #fff; }
+    .icon-doc { background: linear-gradient(135deg, #a855f7, #7c3aed); color: #fff; }
+    .icon-templates { background: linear-gradient(135deg, #ec4899, #db2777); color: #fff; }
+
+    /* Painel do Formulário Deslizante */
+    .modal-view {
+      display: none;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      margin-top: 10px;
+      animation: fadeIn 0.25s ease-out;
+      box-shadow: var(--shadow-md);
+    }
+
+    .modal-view.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .modal-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-back {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      border-radius: 50%;
+    }
+
+    .btn-back:hover {
+      color: var(--text-primary);
+      background: var(--bg-hover);
+    }
+
+    .modal-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    /* Campos de Entrada */
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .form-counter {
+      color: var(--text-muted);
+    }
+
+    .form-input {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 9px 12px;
+      transition: border-color 0.2s;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent-green);
+    }
+
+    /* Lista Dinâmica de Opções */
+    .options-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .option-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-input);
+      border-radius: var(--radius-sm);
+      padding: 2px 6px 2px 10px;
+      border: 1px solid var(--border-color);
+    }
+
+    .option-index {
+      color: var(--text-secondary);
+      font-weight: 600;
+      font-size: 12px;
+      min-width: 18px;
+    }
+
+    .option-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 8px 4px;
+    }
+
+    .option-input:focus {
+      outline: none;
+    }
+
+    .btn-remove-option {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 40%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn-remove-option:hover {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .btn-add-option {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: transparent;
+      border: 1px dashed var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--accent-green);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 9px;
+      cursor: pointer;
+      width: 100%;
+      transition: all 0.2s;
+    }
+
+    .btn-add-option:hover {
+      background: rgba(0, 168, 132, 0.08);
+      border-color: var(--accent-green);
+    }
+
+    /* Toggle Switch */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-top: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+      margin: 12px 0 16px 0;
+    }
+
+    .toggle-label {
+      font-size: 12px;
+      color: var(--text-primary);
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 22px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: var(--bg-hover);
+      transition: .3s;
+      border-radius: 24px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--accent-green);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(18px);
+    }
+
+    /* Botão de Envio (Estilo WhatsApp) */
+    .actions-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 16px;
+    }
+
+    .btn-save-tpl {
+      background: none;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-save-tpl:hover {
+      color: var(--text-primary);
+      border-color: var(--text-secondary);
+      background: var(--bg-hover);
+    }
+
+    .btn-send {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent-green);
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 24px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn-send:hover {
+      background: var(--accent-green-hover);
+      transform: scale(1.02);
+    }
+
+    .btn-send:active {
+      transform: scale(0.98);
+    }
+
+    .btn-send:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Lista de Templates Prontos */
+    .templates-section {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .templates-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .template-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .template-item:hover {
+      border-color: var(--accent-green);
+      background: var(--bg-hover);
+    }
+
+    .tpl-info h4 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+    }
+
+    .tpl-info p {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .tpl-tag {
+      font-size: 9px;
+      text-transform: uppercase;
+      font-weight: 700;
+      padding: 3px 6px;
+      border-radius: 4px;
+      background: rgba(0, 168, 132, 0.15);
+      color: var(--accent-green);
+    }
+
+    /* Notificação Toast */
+    .toast {
+      position: fixed;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: var(--shadow-md);
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .toast.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .toast.success { background: #065f46; color: #a7f3d0; border: 1px solid #059669; }
+    .toast.error { background: #7f1d1d; color: #fecaca; border: 1px solid #dc2626; }
+  </style>
+</head>
+<body>
+
+  <!-- Topo: Identificação do Contato Aberto no Chatwoot -->
+  <div class="app-header">
+    <div class="contact-badge">
+      <div class="contact-avatar" id="avatarInitial">U</div>
+      <div class="contact-details">
+        <h3 id="contactName">Aguardando conversa...</h3>
+        <p><span class="status-dot"></span><span id="contactPhone">+55 (55) 99970-3107</span></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gaveta de Ações do WhatsApp -->
+  <div class="drawer-title">Ações e Menus Interativos</div>
+  <div class="actions-grid">
+    <!-- Botões -->
+    <div class="action-btn" onclick="openMode('buttons')">
+      <div class="action-icon icon-buttons">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="5" width="18" height="14" rx="3"></rect>
+          <line x1="7" y1="12" x2="17" y2="12"></line>
+        </svg>
+      </div>
+      <span class="action-label">Botões</span>
+    </div>
+
+    <!-- Lista -->
+    <div class="action-btn" onclick="openMode('list')">
+      <div class="action-icon icon-list">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" y1="6" x2="21" y2="6"></line>
+          <line x1="8" y1="12" x2="21" y2="12"></line>
+          <line x1="8" y1="18" x2="21" y2="18"></line>
+          <line x1="3" y1="6" x2="3.01" y2="6"></line>
+          <line x1="3" y1="12" x2="3.01" y2="12"></line>
+          <line x1="3" y1="18" x2="3.01" y2="18"></line>
+        </svg>
+      </div>
+      <span class="action-label">Lista</span>
+    </div>
+
+    <!-- Enquete -->
+    <div class="action-btn" onclick="openMode('poll')">
+      <div class="action-icon icon-poll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10"></line>
+          <line x1="12" y1="20" x2="12" y2="4"></line>
+          <line x1="6" y1="20" x2="6" y2="14"></line>
+        </svg>
+      </div>
+      <span class="action-label">Enquete</span>
+    </div>
+
+    <!-- Pix -->
+    <div class="action-btn" onclick="openMode('pix')">
+      <div class="action-icon icon-pix">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+        </svg>
+      </div>
+      <span class="action-label">Pix</span>
+    </div>
+
+    <!-- Localização -->
+    <div class="action-btn" onclick="openMode('location')">
+      <div class="action-icon icon-location">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+          <circle cx="12" cy="10" r="3"></circle>
+        </svg>
+      </div>
+      <span class="action-label">Local</span>
+    </div>
+
+    <!-- Contato -->
+    <div class="action-btn" onclick="openMode('contact')">
+      <div class="action-icon icon-contact">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+      </div>
+      <span class="action-label">Contato</span>
+    </div>
+
+    <!-- Modelos / Templates -->
+    <div class="action-btn" onclick="openMode('templates')">
+      <div class="action-icon icon-templates">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+      </div>
+      <span class="action-label">Modelos</span>
+    </div>
+  </div>
+
+  <!-- PAINEL 1: Formulário de Enquete / Botões / Lista (Estilo Idêntico ao Print) -->
+  <div class="modal-view" id="interactiveFormModal">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <button class="btn-back" onclick="closeModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <span class="modal-title" id="formModalTitle">Criar Enquete</span>
+      </div>
+      <span class="tpl-tag" id="modeTag">ENQUETE</span>
+    </div>
+
+    <!-- Campo Pergunta / Título -->
+    <div class="form-group">
+      <div class="form-label">
+        <span id="titleFieldLabel">Pergunta</span>
+        <span class="form-counter" id="titleCounter">0/255</span>
+      </div>
+      <input type="text" class="form-input" id="inputTitle" placeholder="Faça uma pergunta" maxlength="255" oninput="updateCounters()">
+    </div>
+
+    <!-- Descrição (Opcional para Botões/Lista) -->
+    <div class="form-group" id="groupDesc" style="display:none;">
+      <div class="form-label">
+        <span>Descrição adicional (opcional)</span>
+      </div>
+      <input type="text" class="form-input" id="inputDesc" placeholder="Texto complementar explicativo">
+    </div>
+
+    <!-- Lista Dinâmica de Opções -->
+    <div class="form-label">
+      <span>Opções</span>
+      <span class="form-counter" id="optionsCount">0 opções</span>
+    </div>
+    <div class="options-container" id="optionsList"></div>
+    <button class="btn-add-option" id="btnAddOption" onclick="addOptionRow()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+      Adicionar opção
+    </button>
+
+    <!-- Toggle de Resposta Única / Várias Respostas (para Enquetes) -->
+    <div class="toggle-row" id="toggleRowPoll">
+      <span class="toggle-label">Permitir várias respostas</span>
+      <label class="switch">
+        <input type="checkbox" id="chkMultipleAnswers">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <!-- Rodapé de Ações -->
+    <div class="actions-footer">
+      <button class="btn-save-tpl" onclick="saveAsCustomTemplate()">Salvar Modelo</button>
+      <button class="btn-send" id="btnSend" onclick="executeSend()">
+        <span>Enviar</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- PAINEL 2: Envio de Localização da Unidade -->
+  <div class="modal-view" id="locationModal">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <button class="btn-back" onclick="closeModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <span class="modal-title">Enviar Localização</span>
+      </div>
+      <span class="tpl-tag">GPS</span>
+    </div>
+
+    <div class="templates-grid">
+      <div class="template-item" onclick="sendQuickLocation('matriz')">
+        <div class="tpl-info">
+          <h4>🏢 Matriz Horizontina</h4>
+          <p>Rua Dahne de Abreu, 1260 - Horizontina/RS</p>
+        </div>
+        <span class="tpl-tag">ENVIAR</span>
+      </div>
+      <div class="template-item" onclick="sendQuickLocation('filial')">
+        <div class="tpl-info">
+          <h4>🛒 Filial Três de Maio</h4>
+          <p>Av. Senador Alberto Pasqualini - Três de Maio/RS</p>
+        </div>
+        <span class="tpl-tag">ENVIAR</span>
+      </div>
+      <div class="template-item" onclick="sendQuickLocation('frigorifico')">
+        <div class="tpl-info">
+          <h4>🥩 Frigorífico Schlosser</h4>
+          <p>Unidade Industrial - Horizontina/RS</p>
+        </div>
+        <span class="tpl-tag">ENVIAR</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAINEL 3: Envio de Chave PIX -->
+  <div class="modal-view" id="pixModal">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <button class="btn-back" onclick="closeModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <span class="modal-title">Cobrança / Chave PIX</span>
+      </div>
+      <span class="tpl-tag">PIX</span>
+    </div>
+
+    <div class="form-group">
+      <div class="form-label"><span>Chave PIX (CNPJ / Aleatória / Telefone)</span></div>
+      <input type="text" class="form-input" id="pixKey" value="02816301000109">
+    </div>
+    <div class="form-group">
+      <div class="form-label"><span>Beneficiário</span></div>
+      <input type="text" class="form-input" id="pixName" value="Centro de Compras Zaleski Ltda">
+    </div>
+    <div class="form-group">
+      <div class="form-label"><span>Valor em R$ (opcional)</span></div>
+      <input type="number" step="0.01" class="form-input" id="pixAmount" placeholder="Ex: 150.00">
+    </div>
+    <div class="actions-footer">
+      <div></div>
+      <button class="btn-send" onclick="sendPix()">
+        <span>Enviar PIX</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- PAINEL 4: Biblioteca de Modelos Prontos e Editáveis -->
+  <div class="modal-view" id="templatesModal">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <button class="btn-back" onclick="closeModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <span class="modal-title">Modelos Prontos da TI</span>
+      </div>
+      <span class="tpl-tag">TEMPLATES</span>
+    </div>
+
+    <div class="templates-grid" id="templatesList"></div>
+  </div>
+
+  <!-- Toast de Notificação -->
+  <div class="toast" id="toastMessage"></div>
+
+  <script>
+    // Configurações e Estado
+    const EVO_API_URL = window.location.origin; // Mesma origem da Evolution API
+    const DEFAULT_INSTANCE = 'ti1';
+    let currentMode = 'buttons'; // 'buttons', 'list', 'poll'
+    let currentChatId = '555599703107'; // Default se não recebido do Chatwoot
+
+    // Templates padrão pré-carregados
+    const DEFAULT_TEMPLATES = [
+      {
+        id: 'triagem_ti',
+        type: 'buttons',
+        title: 'Como a equipe da TI pode te ajudar hoje?',
+        options: ['1. Suporte Técnico', '2. Dúvidas ERP', '3. Falar com Atendente']
+      },
+      {
+        id: 'catalogo_servicos',
+        type: 'list',
+        title: 'Catálogo de Serviços da TI CCZaleski',
+        desc: 'Selecione abaixo para qual serviço você precisa de apoio:',
+        options: [
+          'Abertura de Chamado GLPI',
+          'Consulta de Chamados em Aberto',
+          'Suporte a PDVs e Caixas',
+          'Balanças Toledo Prix',
+          'Rede, Wi-Fi e Internet',
+          'Telefonia Khomp e Ramais'
+        ]
+      },
+      {
+        id: 'csat_satisfacao',
+        type: 'poll',
+        title: 'Como você avalia o atendimento da TI hoje?',
+        options: ['⭐⭐⭐⭐⭐ Excelente', '⭐⭐⭐⭐ Bom', '⭐⭐⭐ Regular', '⭐ Insatisfeito'],
+        multiple: false
+      },
+      {
+        id: 'confirmar_visita',
+        type: 'buttons',
+        title: 'Podemos confirmar a visita técnica para hoje?',
+        options: ['Sim, confirmado', 'Não, reagendar']
+      }
+    ];
+
+    // Escuta eventos do Chatwoot via postMessage (Dashboard App)
+    window.addEventListener('message', function(event) {
+      if (!event.data) return;
+      try {
+        const payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (payload.event === 'appContext' && payload.data) {
+          const contact = payload.data.contact || {};
+          if (contact.name) {
+            document.getElementById('contactName').textContent = contact.name;
+            document.getElementById('avatarInitial').textContent = contact.name.charAt(0).toUpperCase();
+          }
+          if (contact.phone_number) {
+            currentChatId = contact.phone_number.replace(/\D/g, '');
+            document.getElementById('contactPhone').textContent = contact.phone_number;
+          }
+        }
+      } catch (e) {
+        console.warn('Erro ao processar postMessage do Chatwoot:', e);
+      }
+    });
+
+    // Pede ao Chatwoot os dados da conversa ativa ao inicializar
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage('chatwoot-dashboard-app:fetch-info', '*');
+    }
+
+    // Inicialização
+    document.addEventListener('DOMContentLoaded', () => {
+      renderTemplatesList();
+    });
+
+    function openMode(mode) {
+      closeModal();
+      currentMode = mode;
+
+      if (mode === 'location') {
+        document.getElementById('locationModal').classList.add('active');
+        return;
+      }
+      if (mode === 'pix') {
+        document.getElementById('pixModal').classList.add('active');
+        return;
+      }
+      if (mode === 'templates') {
+        document.getElementById('templatesModal').classList.add('active');
+        return;
+      }
+
+      // Configurar modo interativo (buttons, list, poll)
+      const modal = document.getElementById('interactiveFormModal');
+      const tag = document.getElementById('modeTag');
+      const title = document.getElementById('formModalTitle');
+      const togglePoll = document.getElementById('toggleRowPoll');
+      const groupDesc = document.getElementById('groupDesc');
+      const btnAdd = document.getElementById('btnAddOption');
+
+      if (mode === 'buttons') {
+        title.textContent = 'Criar Botões Rápidos';
+        tag.textContent = 'BOTÕES';
+        togglePoll.style.display = 'none';
+        groupDesc.style.display = 'none';
+        initOptions(['1. Opção 1', '2. Opção 2', '3. Opção 3'], 3);
+      } else if (mode === 'list') {
+        title.textContent = 'Criar Menu de Lista';
+        tag.textContent = 'LISTA';
+        togglePoll.style.display = 'none';
+        groupDesc.style.display = 'block';
+        initOptions(['Opção 1', 'Opção 2', 'Opção 3', 'Opção 4'], 10);
+      } else if (mode === 'poll') {
+        title.textContent = 'Criar Enquete';
+        tag.textContent = 'ENQUETE';
+        togglePoll.style.display = 'flex';
+        groupDesc.style.display = 'none';
+        initOptions(['Opção A', 'Opção B'], 12);
+      }
+
+      modal.classList.add('active');
+      updateCounters();
+    }
+
+    function closeModal() {
+      document.querySelectorAll('.modal-view').forEach(m => m.classList.remove('active'));
+    }
+
+    function initOptions(defaults, max) {
+      const container = document.getElementById('optionsList');
+      container.innerHTML = '';
+      defaults.forEach((val, idx) => {
+        container.appendChild(createOptionRow(idx + 1, val));
+      });
+      updateCounters();
+    }
+
+    function createOptionRow(index, value = '') {
+      const row = document.createElement('div');
+      row.className = 'option-row';
+      row.innerHTML = `
+        <span class="option-index">${index}.</span>
+        <input type="text" class="option-input" value="${value}" placeholder="Adicionar opção" maxlength="100" oninput="updateCounters()">
+        <button class="btn-remove-option" onclick="removeOptionRow(this)" title="Remover">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      `;
+      return row;
+    }
+
+    function addOptionRow() {
+      const container = document.getElementById('optionsList');
+      const currentCount = container.children.length;
+      if (currentMode === 'buttons' && currentCount >= 3) {
+        showToast('Botões rápidos suportam no máximo 3 opções no WhatsApp.', 'error');
+        return;
+      }
+      container.appendChild(createOptionRow(currentCount + 1, ''));
+      updateCounters();
+    }
+
+    function removeOptionRow(btn) {
+      const container = document.getElementById('optionsList');
+      if (container.children.length <= 2) {
+        showToast('É necessário pelo menos 2 opções.', 'error');
+        return;
+      }
+      btn.closest('.option-row').remove();
+      // Re-indexar
+      Array.from(container.children).forEach((row, i) => {
+        row.querySelector('.option-index').textContent = `${i + 1}.`;
+      });
+      updateCounters();
+    }
+
+    function updateCounters() {
+      const title = document.getElementById('inputTitle').value;
+      document.getElementById('titleCounter').textContent = `${title.length}/255`;
+      const optionsCount = document.querySelectorAll('.option-input').length;
+      document.getElementById('optionsCount').textContent = `${optionsCount} opções`;
+    }
+
+    // Executa Envio
+    async function executeSend() {
+      const title = document.getElementById('inputTitle').value.trim();
+      if (!title) {
+        showToast('Digite uma pergunta ou título para o envio.', 'error');
+        return;
+      }
+
+      const options = Array.from(document.querySelectorAll('.option-input'))
+        .map(i => i.value.trim())
+        .filter(Boolean);
+
+      if (options.length < 2) {
+        showToast('Adicione pelo menos 2 opções preenchidas.', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('btnSend');
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+
+      try {
+        let endpoint = '';
+        let payload = {};
+
+        if (currentMode === 'poll') {
+          endpoint = `/message/sendPoll/${DEFAULT_INSTANCE}`;
+          payload = {
+            number: currentChatId,
+            name: title,
+            selectableCount: document.getElementById('chkMultipleAnswers').checked ? 0 : 1,
+            values: options
+          };
+        } else if (currentMode === 'buttons') {
+          endpoint = `/message/sendButtons/${DEFAULT_INSTANCE}`;
+          payload = {
+            number: currentChatId,
+            title: title,
+            buttons: options.map((opt, i) => ({
+              type: 'reply',
+              displayText: opt,
+              id: `btn_${i + 1}`
+            }))
+          };
+        } else if (currentMode === 'list') {
+          endpoint = `/message/sendList/${DEFAULT_INSTANCE}`;
+          payload = {
+            number: currentChatId,
+            title: title,
+            description: document.getElementById('inputDesc').value || 'Selecione uma opção:',
+            buttonText: 'Ver Opções',
+            footerText: 'TI CCZaleski',
+            sections: [
+              {
+                title: 'Opções',
+                rows: options.map((opt, i) => ({
+                  title: opt,
+                  rowId: `row_${i + 1}`
+                }))
+              }
+            ]
+          };
+        }
+
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': 'B6D711FCDE4D4FD5936544120E713976'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          showToast('Enviado com sucesso no WhatsApp!', 'success');
+          setTimeout(() => closeModal(), 1200);
+        } else {
+          const err = await res.json();
+          showToast(`Falha no envio: ${err.message || 'Verifique conexão'}`, 'error');
+        }
+      } catch (e) {
+        showToast('Erro de rede ao conectar com a Evolution API.', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<span>Enviar</span> <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
+      }
+    }
+
+    // Localização Rápida
+    async function sendQuickLocation(unit) {
+      const locations = {
+        matriz: {
+          name: 'Centro de Compras Zaleski — Matriz',
+          address: 'Rua Dahne de Abreu, 1260, Horizontina - RS',
+          latitude: -27.6256,
+          longitude: -54.3094
+        },
+        filial: {
+          name: 'Centro de Compras Zaleski — Filial',
+          address: 'Av. Senador Alberto Pasqualini, Três de Maio - RS',
+          latitude: -27.7725,
+          longitude: -54.2415
+        },
+        frigorifico: {
+          name: 'Frigorífico Schlosser',
+          address: 'Unidade Industrial, Horizontina - RS',
+          latitude: -27.6310,
+          longitude: -54.3120
+        }
+      };
+
+      const loc = locations[unit];
+      if (!loc) return;
+
+      try {
+        const res = await fetch(`/message/sendLocation/${DEFAULT_INSTANCE}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': 'B6D711FCDE4D4FD5936544120E713976' },
+          body: JSON.stringify({ number: currentChatId, ...loc })
+        });
+        if (res.ok) {
+          showToast('Localização enviada com sucesso!', 'success');
+          setTimeout(() => closeModal(), 1000);
+        } else {
+          showToast('Erro ao enviar localização.', 'error');
+        }
+      } catch (e) {
+        showToast('Erro de conexão.', 'error');
+      }
+    }
+
+    // Enviar PIX
+    async function sendPix() {
+      const key = document.getElementById('pixKey').value;
+      const name = document.getElementById('pixName').value;
+      const amount = document.getElementById('pixAmount').value;
+
+      try {
+        const payload = {
+          number: currentChatId,
+          title: `Chave PIX: ${name}`,
+          description: amount ? `Valor para pagamento: R$ ${parseFloat(amount).toFixed(2)}` : 'Utilize o botão abaixo para copiar a chave PIX.',
+          buttons: [
+            {
+              type: 'pix',
+              name: name,
+              key: key,
+              keyType: 'cnpj',
+              currency: 'BRL'
+            }
+          ]
+        };
+
+        const res = await fetch(`/message/sendButtons/${DEFAULT_INSTANCE}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': 'B6D711FCDE4D4FD5936544120E713976' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          showToast('Card PIX enviado com botão de copiar!', 'success');
+          setTimeout(() => closeModal(), 1000);
+        } else {
+          showToast('Falha ao enviar PIX.', 'error');
+        }
+      } catch (e) {
+        showToast('Erro de conexão.', 'error');
+      }
+    }
+
+    // Renderizar Modelos
+    function renderTemplatesList() {
+      const container = document.getElementById('templatesList');
+      container.innerHTML = '';
+      const customTemplates = JSON.parse(localStorage.getItem('ccz_whatsapp_templates') || '[]');
+      const all = [...DEFAULT_TEMPLATES, ...customTemplates];
+
+      all.forEach(tpl => {
+        const item = document.createElement('div');
+        item.className = 'template-item';
+        item.onclick = () => loadTemplate(tpl);
+        item.innerHTML = `
+          <div class="tpl-info">
+            <h4>${tpl.title}</h4>
+            <p>${tpl.options.length} opções • ${tpl.type.toUpperCase()}</p>
+          </div>
+          <span class="tpl-tag">USAR</span>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    function loadTemplate(tpl) {
+      openMode(tpl.type);
+      document.getElementById('inputTitle').value = tpl.title;
+      if (tpl.desc && document.getElementById('inputDesc')) {
+        document.getElementById('inputDesc').value = tpl.desc;
+      }
+      initOptions(tpl.options, tpl.options.length);
+      if (tpl.type === 'poll' && typeof tpl.multiple === 'boolean') {
+        document.getElementById('chkMultipleAnswers').checked = tpl.multiple;
+      }
+    }
+
+    function saveAsCustomTemplate() {
+      const title = document.getElementById('inputTitle').value.trim();
+      const options = Array.from(document.querySelectorAll('.option-input')).map(i => i.value.trim()).filter(Boolean);
+      if (!title || options.length < 2) {
+        showToast('Preencha título e pelo menos 2 opções para salvar.', 'error');
+        return;
+      }
+
+      const customTemplates = JSON.parse(localStorage.getItem('ccz_whatsapp_templates') || '[]');
+      customTemplates.push({
+        id: 'cust_' + Date.now(),
+        type: currentMode,
+        title: title,
+        options: options
+      });
+      localStorage.setItem('ccz_whatsapp_templates', JSON.stringify(customTemplates));
+      showToast('Modelo salvo com sucesso!', 'success');
+      renderTemplatesList();
+    }
+
+    function showToast(msg, type = 'success') {
+      const t = document.getElementById('toastMessage');
+      t.textContent = msg;
+      t.className = `toast ${type} show`;
+      setTimeout(() => t.classList.remove('show'), 3000);
+    }
+  </script>
+</body>
+</html>
